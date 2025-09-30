@@ -129,11 +129,16 @@ function Show-OSDCloudGUI_Dashboard {
     $groupBoxEN.Controls.Add($button3)
     $groupBoxOther.Controls.AddRange(@($button4, $button5, $button6))
     
-    # Info balk onderaan de boxen
-    $infoTitle = "Belangrijke informatie over Zero-Touch:"
-    $infoPoint1 = "• De installatie wist de volledige harde schijf zonder extra bevestiging."
-    $infoPoint2 = "• Windows wordt direct voorzien van de laatste cumulatieve updates en drivers."
-    $infoPoint3 = "• Het volledige proces duurt circa 30 tot 60 minuten."
+    # --- AANGEPAST: Info balk met vetgedrukte titel en aparte labels ---
+    # Twee lettertypes: één normaal, één vetgedrukt
+    $fontInfo = New-Object System.Drawing.Font('Segoe UI', 9)
+    $fontInfoBold = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+    
+    # Tekst voor de vetgedrukte titel
+    $infoTitleText = "Belangrijke informatie over Zero-Touch:"
+    $infoPoint1 = "* De installatie wist de volledige harde schijf zonder extra bevestiging."
+    $infoPoint2 = "* Windows wordt direct voorzien van de laatste cumulatieve updates en drivers."
+    $infoPoint3 = "* Het volledige proces duurt circa 30 tot 60 minuten."
     $infoManual = "`nVoor een handmatige installatie kiest u de optie 'Handmatige configuratie (GUI)' in de rechterkolom."
     $fullInfoText = "$infoTitle`n`n$infoPoint1`n$infoPoint2`n$infoPoint3`n$infoManual"
 
@@ -203,7 +208,7 @@ switch ($userChoice) {
     '2' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Home' -OSActivation 'Volume' }
     '3' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'en-us' -OSEdition 'Professional' -OSActivation 'Volume' }
     '4' { Start-OSDCloudGui -v2 }
-    '5' {  }
+    '5' { wpeutil reboot }
     '6' { 
         Write-Host -ForegroundColor Yellow "Script wordt afgesloten. De computer wordt NIET herstart."
         Start-Sleep -Seconds 3
