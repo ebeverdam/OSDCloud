@@ -18,7 +18,7 @@ function Show-OSDCloudGUI_Dashboard {
     # 2. Hoofdvenster aanmaken
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'Connectium B.V. - OSDCloud Deployment'
-    
+    $form.Size = New-Object System.Drawing.Size(900, 610)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
     $form.MaximizeBox = $false
@@ -54,7 +54,8 @@ function Show-OSDCloudGUI_Dashboard {
         $memoryStream = New-Object System.IO.MemoryStream($fileBytes)
         $pictureBox.Image = [System.Drawing.Image]::FromStream($memoryStream)
         
-        $pictureBox.Location = New-Object System.Drawing.Point(130, 20)
+        $logoX = ($form.ClientSize.Width - $pictureBox.Width) / 2
+        $pictureBox.Location = New-Object System.Drawing.Point($logoX, 20)
         $pictureBox.Size = New-Object System.Drawing.Size(632, 162)
         $pictureBox.SizeMode = 'StretchImage'
         $form.Controls.Add($pictureBox)
