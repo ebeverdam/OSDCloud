@@ -223,7 +223,7 @@ switch ($userChoice) {
     '3' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'en-us' -OSEdition 'Professional' -OSActivation 'Volume' }
     '4' { Start-OSDCloudGui -v2 }
     '5' { 
-        Write-Host -ForegroundColor Yellow "Script wordt afgesloten en PC wordt herstart."
+        Write-Host -ForegroundColor Yellow "Script wordt afgesloten. De computer wordt nu opnieuw opgestart..."
         Start-Sleep -Seconds 3
         wpeutil reboot 
         }
