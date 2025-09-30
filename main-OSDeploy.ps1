@@ -13,14 +13,29 @@ $input = Read-Host "Maak aub een keuze"
 
 Write-Host  -ForegroundColor Yellow "Loading OSDCloud..."
 
-Import-Module OSD -Force
-Install-Module OSD -Force
+#Import-Module OSD -Force
+#Install-Module OSD -Force
+
+#Set OSDCloud Vars
+$Global:MyOSDCloud = [ordered]@{
+    Restart = [bool]$False
+    RecoveryPartition = [bool]$true
+    OEMActivation = [bool]$True
+    WindowsUpdate = [bool]$true
+    WindowsUpdateDrivers = [bool]$true
+    WindowsDefenderUpdate = [bool]$true
+    SetTimeZone = [bool]$true
+    ClearDiskConfirm = [bool]$False
+    ShutdownSetupComplete = [bool]$false
+    SyncMSUpCatDriverUSB = [bool]$true
+    CheckSHA1 = [bool]$true
+}
 
 switch ($input)
 {
-    '1' { Start-OSDCloud -OSLanguage nl-nl -OSBuild 24H2 -OSEdition Pro -ZTI } 
-    '2' { Start-OSDCloud -OSLanguage nl-nl -OSBuild 24H2 -OSEdition Home -ZTI } 
-    '3' { Start-OSDCloud -OSLanguage en-us -OSBuild 24H2 -OSEdition Pro -ZTI } 
+    '1' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Pro' -OSActivation 'Volume'} 
+    '2' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Home' -OSActivation 'Volume' } 
+    '3' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'en-us' -OSEdition 'Pro' -OSActivation 'Volume' } 
     '4' { Start-OSDCloudGui -v2}
     '5' { Exit		}
 }
