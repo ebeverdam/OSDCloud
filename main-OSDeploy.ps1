@@ -188,14 +188,14 @@ switch ($userChoice) {
     '2' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Home' -OSActivation 'Volume' }
     '3' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'en-us' -OSEdition 'Professional' -OSActivation 'Volume' }
     '4' { Start-OSDCloudGui -v2 }
-    '5' { # Doe niets, de reboot aan het einde wordt vanzelf uitgevoerd }
+    '5' {  }
     '6' { 
         Write-Host -ForegroundColor Yellow "Script wordt afgesloten. De computer wordt NIET herstart."
         Start-Sleep -Seconds 3
         exit # Stop het script hier volledig
     }
 }
-}
+
 # --- Stap 4: Herstart de computer na afloop ---
 # Deze laatste stap wordt overgeslagen als de gebruiker voor optie '6' heeft gekozen.
 Write-Host -ForegroundColor Green "Actie voltooid. De computer wordt nu opnieuw opgestart..."
