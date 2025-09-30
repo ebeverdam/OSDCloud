@@ -195,11 +195,9 @@ switch ($userChoice) {
         exit # Stop het script hier volledig
     }
 }
-
+}
 # --- Stap 4: Herstart de computer na afloop ---
 # Deze laatste stap wordt overgeslagen als de gebruiker voor optie '6' heeft gekozen.
 Write-Host -ForegroundColor Green "Actie voltooid. De computer wordt nu opnieuw opgestart..."
 Start-Sleep -Seconds 5
 wpeutil reboot
-
-PAUSE
