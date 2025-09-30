@@ -219,9 +219,9 @@ if ($userChoice -in ('1', '2', '3', '4')) {
 # --- Stap 3: Voer de actie uit die overeenkomt met de gemaakte keuze ---
 # De switch reageert op de variabele $userChoice uit de GUI.
 switch ($userChoice) {
-    '1' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Professional' -OSActivation 'Volume' }
+    '1' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Pro' -OSActivation 'Volume' }
     '2' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Home' -OSActivation 'Volume' }
-    '3' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'en-us' -OSEdition 'Professional' -OSActivation 'Volume' }
+    '3' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'en-us' -OSEdition 'Pro' -OSActivation 'Volume' }
     '4' { Start-OSDCloudGui -v2 }
     '5' { 
         Write-Host -ForegroundColor Yellow "Script wordt afgesloten. De computer wordt nu opnieuw opgestart..."
