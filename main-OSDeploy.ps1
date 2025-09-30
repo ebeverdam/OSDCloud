@@ -10,6 +10,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
+Write-Host -ForegroundColor Green "Version 1.01"
 function Show-OSDCloudGUI_Dashboard {
     # 1. Assemblies laden
     Add-Type -AssemblyName System.Windows.Forms
