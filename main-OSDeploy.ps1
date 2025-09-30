@@ -136,17 +136,31 @@ function Show-OSDCloudGUI_Dashboard {
     
     # Tekst voor de vetgedrukte titel
     $infoTitleText = "Belangrijke informatie over Zero-Touch:"
+    
+    # Tekst voor de body, met de '*' die je al correct gebruikt
     $infoPoint1 = "* De installatie wist de volledige harde schijf zonder extra bevestiging."
     $infoPoint2 = "* Windows wordt direct voorzien van de laatste cumulatieve updates en drivers."
     $infoPoint3 = "* Het volledige proces duurt circa 30 tot 60 minuten."
     $infoManual = "`nVoor een handmatige installatie kiest u de optie 'Handmatige configuratie (GUI)' in de rechterkolom."
-    $fullInfoText = "$infoTitle`n`n$infoPoint1`n$infoPoint2`n$infoPoint3`n$infoManual"
-
-    $infoLabel = New-Object System.Windows.Forms.Label
-    $infoLabel.Text = $fullInfoText
-    $infoLabel.Font = $fontInfo
-    $infoLabel.Location = New-Object System.Drawing.Point(15, 480) 
-    $infoLabel.Size = New-Object System.Drawing.Size(850, 100)
+    $infoBodyText = "$infoPoint1`n$infoPoint2`n$infoPoint3`n$infoManual"
+    
+    # Label 1: De vetgedrukte titel
+    $infoTitleLabel = New-Object System.Windows.Forms.Label
+    $infoTitleLabel.Text = $infoTitleText
+    $infoTitleLabel.Font = $fontInfoBold
+    $infoTitleLabel.AutoSize = $true # Label past zich automatisch aan de tekstgrootte aan
+    $infoTitleLabel.Location = New-Object System.Drawing.Point(15, 480)
+    
+    # Label 2: De normale tekst (body)
+    $infoBodyLabel = New-Object System.Windows.Forms.Label
+    $infoBodyLabel.Text = $infoBodyText
+    $infoBodyLabel.Font = $fontInfo
+    # Y-positie is net onder de titel
+    $infoBodyLabel.Location = New-Object System.Drawing.Point(15, 505) 
+    $infoBodyLabel.Size = New-Object System.Drawing.Size(850, 80)
+    
+    # 8. De GroupBoxes en de TWEE nieuwe info labels toevoegen aan het hoofdvenster
+    $form.Controls.AddRange(@($groupBoxNL, $groupBoxEN, $groupBoxOther, $infoTitleLabel, $infoBodyLabel))
 
     # 8. De GroupBoxes en het info label toevoegen aan het hoofdvenster
     $form.Controls.AddRange(@($groupBoxNL, $groupBoxEN, $groupBoxOther, $infoLabel))
@@ -208,9 +222,13 @@ switch ($userChoice) {
     '2' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Home' -OSActivation 'Volume' }
     '3' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'en-us' -OSEdition 'Professional' -OSActivation 'Volume' }
     '4' { Start-OSDCloudGui -v2 }
-    '5' { wpeutil reboot }
+    '5' { 
+        Write-Host -ForegroundColor Yellow "Script wordt afgesloten en PC wordt herstart."
+        Start-Sleep -Seconds 3
+        wpeutil reboot 
+        }
     '6' { 
-        Write-Host -ForegroundColor Yellow "Script wordt afgesloten. De computer wordt NIET herstart."
+        Write-Host -ForegroundColor Yellow "Script wordt afgesloten."
         Start-Sleep -Seconds 3
         exit # Stop het script hier volledig
     }
