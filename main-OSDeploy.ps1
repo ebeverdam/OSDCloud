@@ -27,12 +27,20 @@ function Show-OSDCloudGUI_Dashboard {
     # --- Logo sectie ---
     # Functie om het logo te downloaden met meerdere pogingen
     function Download-FileWithRetry {
-        param([string]$Url, [string]$DestinationPath, [int]$MaxRetries = 3, [int]$DelaySeconds = 2)
+        param(
+            [string]$Url,
+            [string]$DestinationPath,
+            [int]$MaxRetries = 3,
+            [int]$DelaySeconds = 2
+        )
+
         $attempt = 0
         while ($attempt -lt $MaxRetries) {
             try {
                 Invoke-WebRequest -Uri $Url -OutFile $DestinationPath -UseBasicParsing
-                if (Test-Path $DestinationPath) { return $true }
+                if (Test-Path $DestinationPath) {
+                    return $true
+                }
             } catch {
                 Write-Warning "Download poging $($attempt + 1) mislukt: $_"
             }
@@ -42,26 +50,33 @@ function Show-OSDCloudGUI_Dashboard {
         return $false
     }
 
-    # URL en unieke bestandsnaam voor het logo
-    $logoUrl = "https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/images/Connectium.png"
-    $tempLogoPath = Join-Path -Path $env:TEMP -ChildPath ("Connectium-TEMP" + (Get-Random -Minimum 10000 -Maximum 99999) + ".png")
 
-    # Download en toon het logo
+    # URL van het logo
+    $logoUrl = "https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/images/Connectium.png"
+
+    # Originele bestandsnaam extraheren
+    $originalFileName = [System.IO.Path]::GetFileNameWithoutExtension($logoUrl)
+    $fileExtension = [System.IO.Path]::GetExtension($logoUrl)
+
+    # Random suffix genereren
+    $randomSuffix = Get-Random -Minimum 10000 -Maximum 99999
+
+    # Bestandsnaam samenstellen
+    $tempLogoPath = Join-Path -Path $env:TEMP -ChildPath "$originalFileName-TEMP$randomSuffix$fileExtension"
+
+    # Download uitvoeren
     if (Download-FileWithRetry -Url $logoUrl -DestinationPath $tempLogoPath) {
+        # Afbeelding toevoegen aan form
         $pictureBox = New-Object System.Windows.Forms.PictureBox
-        # Gebruik de memory stream methode om file locks te voorkomen
-        $fileBytes = [System.IO.File]::ReadAllBytes($tempLogoPath)
-        $memoryStream = New-Object System.IO.MemoryStream($fileBytes)
-        $pictureBox.Image = [System.Drawing.Image]::FromStream($memoryStream)
-        
-        $logoX = ($form.ClientSize.Width - $pictureBox.Width) / 2
-        $pictureBox.Location = New-Object System.Drawing.Point($logoX, 20)
+        $pictureBox.Image = [System.Drawing.Image]::FromFile($tempLogoPath)
+        $pictureBox.Location = New-Object System.Drawing.Point(130, 20)
         $pictureBox.Size = New-Object System.Drawing.Size(632, 162)
         $pictureBox.SizeMode = 'StretchImage'
         $form.Controls.Add($pictureBox)
     } else {
         Write-Warning "Kon het logo niet downloaden na meerdere pogingen."
     }
+
     
     # 3. Lettertypes
     $font = New-Object System.Drawing.Font('Segoe UI', 10)
@@ -170,7 +185,6 @@ if ($userChoice -in ('1', '2', '3', '4')) {
         Restart               = [bool]$False
         RecoveryPartition     = [bool]$true
         OEMActivation         = [bool]$True
-        TimeZone              = 'W. Europe Standard Time' # Belangrijke toevoeging
         WindowsUpdate         = [bool]$true
         WindowsUpdateDrivers  = [bool]$true
         WindowsDefenderUpdate = [bool]$true
