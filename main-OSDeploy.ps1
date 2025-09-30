@@ -4,19 +4,15 @@
 # Auteur: Connectium B.V. / E. Beverdam
 # =================================================================
 
-# Eerst wordt de volledige functie voor de GUI gedefinieerd.
-# Het script voert deze code nog niet uit, maar leest het in het geheugen.
-
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
 Write-Host -ForegroundColor Green "Version 2025.09.01.01"
 function Show-OSDCloudGUI_Dashboard {
-    # 1. Assemblies laden
+
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
-    # 2. Hoofdvenster aanmaken
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'Connectium B.V. - OSDCloud Deployment'
     $form.Size = New-Object System.Drawing.Size(900, 610)
@@ -26,7 +22,6 @@ function Show-OSDCloudGUI_Dashboard {
     $form.MinimizeBox = $false
 
     # --- Logo sectie ---
-    # Functie om het logo te downloaden met meerdere pogingen
     function Download-FileWithRetry {
         param(
             [string]$Url,
@@ -51,23 +46,16 @@ function Show-OSDCloudGUI_Dashboard {
         return $false
     }
 
-
-    # URL van het logo
     $logoUrl = "https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/images/Connectium.png"
 
-    # Originele bestandsnaam extraheren
     $originalFileName = [System.IO.Path]::GetFileNameWithoutExtension($logoUrl)
     $fileExtension = [System.IO.Path]::GetExtension($logoUrl)
 
-    # Random suffix genereren
     $randomSuffix = Get-Random -Minimum 10000 -Maximum 99999
 
-    # Bestandsnaam samenstellen
     $tempLogoPath = Join-Path -Path $env:TEMP -ChildPath "$originalFileName-TEMP$randomSuffix$fileExtension"
 
-    # Download uitvoeren
     if (Download-FileWithRetry -Url $logoUrl -DestinationPath $tempLogoPath) {
-        # Afbeelding toevoegen aan form
         $pictureBox = New-Object System.Windows.Forms.PictureBox
         $pictureBox.Image = [System.Drawing.Image]::FromFile($tempLogoPath)
         $pictureBox.Location = New-Object System.Drawing.Point(130, 20)
@@ -79,12 +67,10 @@ function Show-OSDCloudGUI_Dashboard {
     }
 
     
-    # 3. Lettertypes
     $font = New-Object System.Drawing.Font('Segoe UI', 10)
     $fontGroupBox = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
     $fontInfo = New-Object System.Drawing.Font('Segoe UI', 9)
 
-    # 4. GroupBoxes aanmaken
     $yPositionGroupBoxes = 200
     $groupBoxNL = New-Object System.Windows.Forms.GroupBox
     $groupBoxNL.Text = "ZERO-TOUCH Nederlands"
@@ -104,7 +90,6 @@ function Show-OSDCloudGUI_Dashboard {
     $groupBoxOther.Location = New-Object System.Drawing.Point(595, $yPositionGroupBoxes)
     $groupBoxOther.Size = New-Object System.Drawing.Size(270, 260)
 
-    # 5. Functie voor knoppen
     function New-DashboardButton {
         param($Text, $Y_Position, $DialogResult)
         $button = New-Object System.Windows.Forms.Button
@@ -117,7 +102,6 @@ function Show-OSDCloudGUI_Dashboard {
         return $button
     }
 
-    # 6. Knoppen aanmaken
     $button1 = New-DashboardButton -Text "Windows 11 24H2 Professional" -Y_Position 60 -DialogResult Yes
     $button2 = New-DashboardButton -Text "Windows 11 24H2 Home" -Y_Position 130 -DialogResult No
     $button3 = New-DashboardButton -Text "Windows 11 24H2 Professional" -Y_Position 60 -DialogResult Abort
@@ -125,56 +109,42 @@ function Show-OSDCloudGUI_Dashboard {
     $button5 = New-DashboardButton -Text "Afsluiten en Herstarten" -Y_Position 130 -DialogResult Ignore
     $button6 = New-DashboardButton -Text "Alleen Afsluiten (Exit)" -Y_Position 200 -DialogResult Cancel
 
-    # 7. Knoppen toevoegen aan de JUISTE GroupBox
     $groupBoxNL.Controls.AddRange(@($button1, $button2))
     $groupBoxEN.Controls.Add($button3)
     $groupBoxOther.Controls.AddRange(@($button4, $button5, $button6))
     
-    # --- AANGEPAST: Info balk met vetgedrukte titel en aparte labels ---
-    # Twee lettertypes: één normaal, één vetgedrukt
     $fontInfo = New-Object System.Drawing.Font('Segoe UI', 9)
     $fontInfoBold = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
     
-    # Tekst voor de vetgedrukte titel
     $infoTitleText = "Belangrijke informatie over Zero-Touch:"
     
-    # Tekst voor de body, met de '*' die je al correct gebruikt
     $infoPoint1 = "* De installatie wist de volledige harde schijf zonder extra bevestiging."
     $infoPoint2 = "* Windows wordt direct voorzien van de laatste cumulatieve updates en drivers."
     $infoPoint3 = "* Het volledige proces duurt circa 30 tot 60 minuten."
     $infoManual = "`nVoor een handmatige installatie kiest u de optie 'Handmatige configuratie (GUI)' in de rechterkolom."
     $infoBodyText = "$infoPoint1`n$infoPoint2`n$infoPoint3`n$infoManual"
-    
-    # Label 1: De vetgedrukte titel
+
     $infoTitleLabel = New-Object System.Windows.Forms.Label
     $infoTitleLabel.Text = $infoTitleText
     $infoTitleLabel.Font = $fontInfoBold
-    $infoTitleLabel.AutoSize = $true # Label past zich automatisch aan de tekstgrootte aan
+    $infoTitleLabel.AutoSize = $true 
     $infoTitleLabel.Location = New-Object System.Drawing.Point(15, 480)
     
-    # Label 2: De normale tekst (body)
     $infoBodyLabel = New-Object System.Windows.Forms.Label
     $infoBodyLabel.Text = $infoBodyText
     $infoBodyLabel.Font = $fontInfo
-    # Y-positie is net onder de titel
     $infoBodyLabel.Location = New-Object System.Drawing.Point(15, 505) 
     $infoBodyLabel.Size = New-Object System.Drawing.Size(850, 80)
-    
-    # 8. De GroupBoxes en de TWEE nieuwe info labels toevoegen aan het hoofdvenster
+
     $form.Controls.AddRange(@($groupBoxNL, $groupBoxEN, $groupBoxOther, $infoTitleLabel, $infoBodyLabel))
 
-    # 8. De GroupBoxes en het info label toevoegen aan het hoofdvenster
     $form.Controls.AddRange(@($groupBoxNL, $groupBoxEN, $groupBoxOther, $infoLabel))
-    
-    # 9. GUI tonen en wachten op een keuze
+ 
     $result = $form.ShowDialog()
     
-    # Ruim de memory stream op, indien aangemaakt
     if ($memoryStream) { $memoryStream.Dispose() }
-    # Ruim het tijdelijke bestand op
     if (Test-Path $tempLogoPath) { Remove-Item $tempLogoPath -Force -ErrorAction SilentlyContinue }
 
-    # 10. Keuze "vertalen" naar een waarde
     $selection = switch ($result) {
         'Yes'    { '1' }
         'No'     { '2' }
