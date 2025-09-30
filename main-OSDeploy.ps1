@@ -201,3 +201,5 @@ switch ($userChoice) {
 Write-Host -ForegroundColor Green "Actie voltooid. De computer wordt nu opnieuw opgestart..."
 Start-Sleep -Seconds 5
 wpeutil reboot
+
+PAUSE
