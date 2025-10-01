@@ -181,8 +181,8 @@ if ($userChoice -in ('1', '2', '3', '4')) {
         SetTimeZone           = [bool]$true
         ClearDiskConfirm      = [bool]$False
         ShutdownSetupComplete = [bool]$false
-        SyncMSUpCatDriverUSB  = [bool]$true
-        CheckSHA1             = [bool]$true
+        SyncMSUpCatDriverUSB  = [bool]$false
+        CheckSHA1             = [bool]$false
     }
 }
 
