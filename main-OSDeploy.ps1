@@ -120,7 +120,7 @@ function Show-OSDCloudGUI_Dashboard {
     
     $infoPoint1 = "* De installatie wist de volledige harde schijf zonder extra bevestiging."
     $infoPoint2 = "* Windows wordt direct voorzien van de laatste cumulatieve updates en drivers."
-    $infoPoint3 = "* Het volledige proces duurt circa 30 tot 60 minuten."
+    $infoPoint3 = "* Het volledige proces kan tot zeker 60 minuten duren."
     $infoManual = "`nVoor een handmatige installatie kiest u de optie 'Handmatige configuratie (GUI)' in de rechterkolom."
     $infoBodyText = "$infoPoint1`n$infoPoint2`n$infoPoint3`n$infoManual"
 
