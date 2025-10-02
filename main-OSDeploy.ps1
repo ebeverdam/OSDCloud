@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2025.09.01.01"
+Write-Host -ForegroundColor Green "Version 2025.10.02.01"
 function Show-OSDCloudGUI_Dashboard {
 
     Add-Type -AssemblyName System.Windows.Forms
@@ -102,9 +102,9 @@ function Show-OSDCloudGUI_Dashboard {
         return $button
     }
 
-    $button1 = New-DashboardButton -Text "Windows 11 24H2 Professional" -Y_Position 60 -DialogResult Yes
-    $button2 = New-DashboardButton -Text "Windows 11 24H2 Home" -Y_Position 130 -DialogResult No
-    $button3 = New-DashboardButton -Text "Windows 11 24H2 Professional" -Y_Position 60 -DialogResult Abort
+    $button1 = New-DashboardButton -Text "Windows 11 25H2 Professional" -Y_Position 60 -DialogResult Yes
+    $button2 = New-DashboardButton -Text "Windows 11 24H2 Professional" -Y_Position 130 -DialogResult No
+    $button3 = New-DashboardButton -Text "Windows 11 25H2 Professional" -Y_Position 60 -DialogResult Abort
     $button4 = New-DashboardButton -Text "Handmatige configuratie (GUI)" -Y_Position 60 -DialogResult Retry
     $button5 = New-DashboardButton -Text "Afsluiten en Herstarten" -Y_Position 130 -DialogResult Ignore
     $button6 = New-DashboardButton -Text "Alleen Afsluiten (Exit)" -Y_Position 200 -DialogResult Cancel
@@ -189,9 +189,9 @@ if ($userChoice -in ('1', '2', '3', '4')) {
 # --- Stap 3: Voer de actie uit die overeenkomt met de gemaakte keuze ---
 # De switch reageert op de variabele $userChoice uit de GUI.
 switch ($userChoice) {
-    '1' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Pro' -OSActivation 'Volume' }
-    '2' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Home' -OSActivation 'Volume' }
-    '3' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'en-us' -OSEdition 'Pro' -OSActivation 'Volume' }
+    '1' { Start-OSDCloud -OSName 'Windows 11 25H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Pro' -OSActivation 'Volume' }
+    '2' { Start-OSDCloud -OSName 'Windows 11 24H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Pro' -OSActivation 'Volume' }
+    '3' { Start-OSDCloud -OSName 'Windows 11 25H2 x64' -OSLanguage 'en-us' -OSEdition 'Pro' -OSActivation 'Volume' }
     '4' { Start-OSDCloudGui -v2 }
     '5' { 
         Write-Host -ForegroundColor Yellow "Script wordt afgesloten. De computer wordt nu opnieuw opgestart..."
