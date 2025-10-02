@@ -172,14 +172,14 @@ if ($userChoice -in ('1', '2', '3', '4')) {
 
     # Definieer de OSDCloud variabelen. Deze worden alleen ingesteld als het nodig is.
     $Global:MyOSDCloud = [ordered]@{
-        Restart               = [bool]$False
+        Restart               = [bool]$true
         RecoveryPartition     = [bool]$true
-        OEMActivation         = [bool]$True
+        OEMActivation         = [bool]$true
         WindowsUpdate         = [bool]$true
         WindowsUpdateDrivers  = [bool]$true
         WindowsDefenderUpdate = [bool]$true
         SetTimeZone           = [bool]$true
-        ClearDiskConfirm      = [bool]$False
+        ClearDiskConfirm      = [bool]$false
         ShutdownSetupComplete = [bool]$false
         SyncMSUpCatDriverUSB  = [bool]$false
         CheckSHA1             = [bool]$false
