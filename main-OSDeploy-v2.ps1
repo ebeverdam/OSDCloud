@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test"
+Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test2"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -180,11 +180,11 @@ if ($userChoice -in ('1', '2', '3', '4')) {
 # Gedeelde instellingen voor de zero-touch opties
 # -CLI   : geen OSDCloud-GUI, direct starten
 # -Force : schijf wissen zonder bevestiging (zero-touch)
-# -PostAction Restart : herstart WinPE na afloop
+# -PostAction Quit : niet zelf herstarten; eerst SetupComplete voorbereiden (Stap 4)
 $DeployCommon = @{
     CLI          = $true
     Force        = $true
-    PostAction   = 'Restart'
+    PostAction   = 'Quit'
     OSEdition    = 'Pro'
     OSActivation = 'Volume'
 }
@@ -194,7 +194,7 @@ switch ($userChoice) {
     '1' { Deploy-OSDCloud @DeployCommon -OperatingSystem 'Windows 11 26H2' -OSLanguageCode 'nl-nl' }
     '2' { Deploy-OSDCloud @DeployCommon -OperatingSystem 'Windows 11 25H2' -OSLanguageCode 'nl-nl' }
     '3' { Deploy-OSDCloud @DeployCommon -OperatingSystem 'Windows 11 26H2' -OSLanguageCode 'en-us' }
-    '4' { Deploy-OSDCloud -PostAction Restart }   # OSDCloud v2 GUI
+    '4' { Deploy-OSDCloud -PostAction Quit }      # OSDCloud v2 GUI
     '5' {
         Write-Host -ForegroundColor Yellow "Script wordt afgesloten. De computer wordt nu opnieuw opgestart..."
         Start-Sleep -Seconds 3
@@ -207,8 +207,48 @@ switch ($userChoice) {
     }
 }
 
-# --- Stap 4: Vangnet ---
-# Deploy-OSDCloud herstart zelf (PostAction Restart). Komt het script hier toch,
-# dan is de deployment gestopt of mislukt: niet automatisch herstarten, zodat je de fout kunt lezen.
-Write-Warning "Deploy-OSDCloud is beeindigd zonder herstart. Controleer de meldingen hierboven."
-Write-Host "Logs: X:\Windows\Temp\osdcloud-logs en C:\Windows\Temp\osdcloud-logs"
+# --- Stap 4: Windows Update (drivers) na installatie via SetupComplete ---
+# OSDCloud v2 heeft (nog) geen werkende Microsoft Update Catalog-driverstap.
+# Daarom draait na de setup, als SYSTEM en voor OOBE, ons eigen Windows Update-script.
+$WUScriptUrl  = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/scripts/Install-OSUpdates.ps1'
+$WUScriptArgs = '-Silent -DriversOnly'   # alleen drivers; volledige updates later via Intune/OOBE
+$OSDrive      = 'C:'
+
+if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
+    Write-Host -ForegroundColor Cyan "Windows Update-stap voorbereiden in SetupComplete..."
+
+    $WUDir    = "$OSDrive\ProgramData\Scripts\WindowsUpdates"
+    $WUScript = Join-Path $WUDir 'Install-OSUpdates.ps1'
+    New-Item -Path $WUDir -ItemType Directory -Force | Out-Null
+
+    try {
+        Invoke-WebRequest -Uri $WUScriptUrl -OutFile $WUScript -UseBasicParsing
+        Write-Host -ForegroundColor Green "Windows Update-script gedownload naar $WUScript"
+
+        $SetupScripts  = "$OSDrive\Windows\Setup\Scripts"
+        $SetupComplete = Join-Path $SetupScripts 'SetupComplete.cmd'
+        New-Item -Path $SetupScripts -ItemType Directory -Force | Out-Null
+
+        # Toevoegen (niet overschrijven): OSDCloud kan hier zelf al driverpack-stappen in zetten
+        $Lines = @(
+            ''
+            'REM === Connectium: Windows Update drivers ==='
+            "%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"C:\ProgramData\Scripts\WindowsUpdates\Install-OSUpdates.ps1`" $WUScriptArgs"
+        )
+        Add-Content -Path $SetupComplete -Value $Lines -Encoding Ascii
+        Write-Host -ForegroundColor Green "SetupComplete.cmd bijgewerkt."
+    }
+    catch {
+        Write-Warning "Windows Update-stap kon niet worden voorbereid: $($_.Exception.Message)"
+        Write-Warning "De installatie gaat door zonder Windows Update-drivers."
+    }
+
+    Write-Host -ForegroundColor Green "Installatie voltooid. De computer wordt nu opnieuw opgestart..."
+    Start-Sleep -Seconds 5
+    wpeutil reboot
+}
+else {
+    # Geen Windows op C: -> deployment is gestopt of mislukt. Niet herstarten, zodat je de fout kunt lezen.
+    Write-Warning "Geen Windows-installatie gevonden op $OSDrive. Controleer de meldingen hierboven."
+    Write-Host "Logs: X:\Windows\Temp\osdcloud-logs"
+}
