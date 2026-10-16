@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test6"
+Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test7"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -211,6 +211,8 @@ switch ($userChoice) {
 # OSDCloud v2 heeft (nog) geen werkende Microsoft Update Catalog-driverstap.
 # Daarom draait na de setup, als SYSTEM en voor OOBE, ons eigen Windows Update-script.
 $WUScriptUrl  = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/scripts/Install-OSUpdates.ps1'
+$ReportUrl    = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/scripts/New-InstallReport.ps1'
+$LogoUrl      = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/images/Connectium.png'
 $WUScriptArgs = '-Silent'                # alle updates: cumulatieve updates (CU), Defender, .NET en drivers
 $OSDrive      = 'C:'
 $GuestSSID    = 'Connectium Gasten'      # open WiFi: verbinden in SetupComplete als er geen kabel is
@@ -225,6 +227,14 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
     try {
         Invoke-WebRequest -Uri $WUScriptUrl -OutFile $WUScript -UseBasicParsing
         Write-Host -ForegroundColor Green "Windows Update-script gedownload naar $WUScript"
+
+        # Installatierapport (na ronde 2 bij eerste aanmelding); mislukt de download, dan gaat de rest door
+        try {
+            Invoke-WebRequest -Uri $ReportUrl -OutFile (Join-Path $WUDir 'New-InstallReport.ps1') -UseBasicParsing
+            Invoke-WebRequest -Uri $LogoUrl   -OutFile (Join-Path $WUDir 'Connectium.png')        -UseBasicParsing
+            Write-Host -ForegroundColor Green "Installatierapport-script gedownload."
+        }
+        catch { Write-Warning "Installatierapport-script niet gedownload: $($_.Exception.Message)" }
 
         $SetupScripts  = "$OSDrive\Windows\Setup\Scripts"
         $SetupComplete = Join-Path $SetupScripts 'SetupComplete.cmd'
@@ -317,6 +327,8 @@ exit 0
             '@echo off'
             'REM Connectium: eenmalige Windows Update-ronde met GUI bij eerste aanmelding'
             '"%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\Install-OSUpdates.ps1" -IgnoreOOBECheck'
+            'REM Installatierapport maken en openen in Edge voor de gebruiker'
+            'if exist "C:\ProgramData\Scripts\WindowsUpdates\New-InstallReport.ps1" "%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\New-InstallReport.ps1"'
             "schtasks /Delete /TN `"$TaskName`" /F"
             'REM Gasten-WiFi profiel opruimen: niet meenemen naar de klant'
             "netsh wlan delete profile name=`"$GuestSSID`""
