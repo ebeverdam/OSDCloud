@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test2"
+Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test4"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -207,11 +207,11 @@ switch ($userChoice) {
     }
 }
 
-# --- Stap 4: Windows Update (drivers) na installatie via SetupComplete ---
+# --- Stap 4: Windows Updates (CU + drivers) na installatie via SetupComplete ---
 # OSDCloud v2 heeft (nog) geen werkende Microsoft Update Catalog-driverstap.
 # Daarom draait na de setup, als SYSTEM en voor OOBE, ons eigen Windows Update-script.
 $WUScriptUrl  = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/scripts/Install-OSUpdates.ps1'
-$WUScriptArgs = '-Silent -DriversOnly'   # alleen drivers; volledige updates later via Intune/OOBE
+$WUScriptArgs = '-Silent'                # alle updates: cumulatieve updates (CU), Defender, .NET en drivers
 $OSDrive      = 'C:'
 
 if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
@@ -232,7 +232,7 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
         # Toevoegen (niet overschrijven): OSDCloud kan hier zelf al driverpack-stappen in zetten
         $Lines = @(
             ''
-            'REM === Connectium: Windows Update drivers ==='
+            'REM === Connectium: Windows Updates (CU + drivers) ==='
             "%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"C:\ProgramData\Scripts\WindowsUpdates\Install-OSUpdates.ps1`" $WUScriptArgs"
         )
         Add-Content -Path $SetupComplete -Value $Lines -Encoding Ascii
@@ -243,8 +243,63 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
         Write-Warning "De installatie gaat door zonder Windows Update-drivers."
     }
 
+    # Melding vooraf: tijdens SetupComplete kan Windows geen vensters tonen
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+
+        $Script:Remaining = 30
+        $NoticeForm = New-Object System.Windows.Forms.Form
+        $NoticeForm.Text            = 'Connectium B.V. - OSDCloud Deployment'
+        $NoticeForm.Size            = New-Object System.Drawing.Size(560, 260)
+        $NoticeForm.StartPosition   = 'CenterScreen'
+        $NoticeForm.FormBorderStyle = 'FixedDialog'
+        $NoticeForm.MaximizeBox     = $false
+        $NoticeForm.MinimizeBox     = $false
+        $NoticeForm.TopMost         = $true
+
+        $NoticeTitle = New-Object System.Windows.Forms.Label
+        $NoticeTitle.Text     = 'Let op: na de herstart worden updates en drivers geinstalleerd'
+        $NoticeTitle.Font     = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
+        $NoticeTitle.Location = New-Object System.Drawing.Point(20, 20)
+        $NoticeTitle.Size     = New-Object System.Drawing.Size(510, 25)
+
+        $NoticeBody = New-Object System.Windows.Forms.Label
+        $NoticeBody.Text     = "Windows installeert na de herstart automatisch Windows Updates en driver-updates.`n`n" +
+                               "Het scherm 'Even geduld' kan daardoor aanzienlijk langer zichtbaar blijven.`n" +
+                               "Zet de computer niet uit en houd de netwerkkabel aangesloten."
+        $NoticeBody.Font     = New-Object System.Drawing.Font('Segoe UI', 10)
+        $NoticeBody.Location = New-Object System.Drawing.Point(20, 55)
+        $NoticeBody.Size     = New-Object System.Drawing.Size(510, 90)
+
+        $NoticeButton = New-Object System.Windows.Forms.Button
+        $NoticeButton.Text         = "Nu herstarten ($Script:Remaining)"
+        $NoticeButton.Font         = New-Object System.Drawing.Font('Segoe UI', 10)
+        $NoticeButton.Size         = New-Object System.Drawing.Size(200, 40)
+        $NoticeButton.Location     = New-Object System.Drawing.Point(330, 160)
+        $NoticeButton.DialogResult = 'OK'
+
+        $NoticeTimer = New-Object System.Windows.Forms.Timer
+        $NoticeTimer.Interval = 1000
+        $NoticeTimer.Add_Tick({
+            $Script:Remaining--
+            $NoticeButton.Text = "Nu herstarten ($Script:Remaining)"
+            if ($Script:Remaining -le 0) { $NoticeTimer.Stop(); $NoticeForm.Close() }
+        })
+
+        $NoticeForm.Controls.AddRange(@($NoticeTitle, $NoticeBody, $NoticeButton))
+        $NoticeForm.AcceptButton = $NoticeButton
+        $NoticeForm.Add_Shown({ $NoticeTimer.Start() })
+        [void]$NoticeForm.ShowDialog()
+        $NoticeTimer.Dispose()
+        $NoticeForm.Dispose()
+    }
+    catch {
+        Write-Warning "Melding kon niet worden getoond: $($_.Exception.Message)"
+    }
+
     Write-Host -ForegroundColor Green "Installatie voltooid. De computer wordt nu opnieuw opgestart..."
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 3
     wpeutil reboot
 }
 else {
