@@ -27,10 +27,6 @@ $Global:ToolsBaseUrl = "https://github.com/QuadNL/scripts/raw/9796203051aae195c8
 $Global:LogFile      = Join-Path $Global:LogDir "LiveOutput.log"
 $Global:WrapperLog   = Join-Path $Global:LogDir "Wrapper.log"
 
-# === Silent Logic ===
-function Start-SilentLogic {
-    Add-Type -AssemblyName System.Windows.Forms   # nodig voor DoEvents() in Install-WUAUpdate
-    Write-Log "Starting Silent Mode Logic."
 
 # === Logger ===
 function Write-Log {
@@ -427,6 +423,7 @@ function Start-UpdateGUI {
 
 # === Silent Payload (System Context) ===
 function Start-SilentLogic {
+    Add-Type -AssemblyName System.Windows.Forms   # nodig voor DoEvents() in Install-WUAUpdate
     Write-Log "Starting Silent Mode Logic."
     try {
         $WUASession = New-WUASession
