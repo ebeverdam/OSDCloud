@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test4"
+Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test5"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -237,6 +237,27 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
         )
         Add-Content -Path $SetupComplete -Value $Lines -Encoding Ascii
         Write-Host -ForegroundColor Green "SetupComplete.cmd bijgewerkt."
+
+        # --- Tweede, zichtbare Windows Update-ronde bij de eerste aanmelding ---
+        # Na de herstart (CU afgerond) komen vervolg-updates beschikbaar.
+        # Eenmalige taak als SYSTEM; het script toont via ServiceUI de GUI in de gebruikerssessie.
+        $TaskName     = 'Connectium\FirstLogonWindowsUpdates'
+        $FirstLogonCmd = Join-Path $WUDir 'FirstLogonUpdates.cmd'
+        $FirstLogonContent = @(
+            '@echo off'
+            'REM Connectium: eenmalige Windows Update-ronde met GUI bij eerste aanmelding'
+            '"%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\Install-OSUpdates.ps1" -IgnoreOOBECheck'
+            "schtasks /Delete /TN `"$TaskName`" /F"
+        )
+        Set-Content -Path $FirstLogonCmd -Value $FirstLogonContent -Encoding Ascii
+
+        $TaskLines = @(
+            ''
+            'REM === Connectium: eenmalige Windows Update-ronde met GUI bij eerste aanmelding ==='
+            "schtasks /Create /TN `"$TaskName`" /TR `"C:\ProgramData\Scripts\WindowsUpdates\FirstLogonUpdates.cmd`" /SC ONLOGON /DELAY 0002:00 /RU SYSTEM /RL HIGHEST /F"
+        )
+        Add-Content -Path $SetupComplete -Value $TaskLines -Encoding Ascii
+        Write-Host -ForegroundColor Green "Eenmalige Windows Update-taak voor eerste aanmelding toegevoegd."
     }
     catch {
         Write-Warning "Windows Update-stap kon niet worden voorbereid: $($_.Exception.Message)"
