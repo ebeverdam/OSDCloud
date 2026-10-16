@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test7"
+Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test8"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -163,12 +163,138 @@ function Show-OSDCloudGUI_Dashboard {
 }
 
 # =================================================================
+# Gegevens van het apparaat invullen (C-label, klant)
+# =================================================================
+$CLabelPattern = '^C\d{4,6}$'   # bijvoorbeeld C01234
+
+function Show-DeploymentInfoForm {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $font      = New-Object System.Drawing.Font('Segoe UI', 10)
+    $fontBold  = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $fontTitle = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text            = 'Connectium B.V. - Gegevens apparaat'
+    $form.Size            = New-Object System.Drawing.Size(520, 400)
+    $form.StartPosition   = 'CenterScreen'
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox     = $false
+    $form.MinimizeBox     = $false
+    $form.TopMost         = $true
+
+    $title = New-Object System.Windows.Forms.Label
+    $title.Text     = 'Gegevens van dit apparaat'
+    $title.Font     = $fontTitle
+    $title.Location = New-Object System.Drawing.Point(24, 20)
+    $title.Size     = New-Object System.Drawing.Size(460, 26)
+
+    $lblLabel = New-Object System.Windows.Forms.Label
+    $lblLabel.Text     = 'C-label (sticker op het apparaat), bijv. C01234'
+    $lblLabel.Font     = $fontBold
+    $lblLabel.Location = New-Object System.Drawing.Point(24, 62)
+    $lblLabel.Size     = New-Object System.Drawing.Size(460, 22)
+
+    $txtLabel = New-Object System.Windows.Forms.TextBox
+    $txtLabel.Font            = New-Object System.Drawing.Font('Consolas', 12)
+    $txtLabel.Location        = New-Object System.Drawing.Point(24, 88)
+    $txtLabel.Size            = New-Object System.Drawing.Size(200, 30)
+    $txtLabel.MaxLength       = 7
+    $txtLabel.CharacterCasing = 'Upper'
+
+    $chkNone = New-Object System.Windows.Forms.CheckBox
+    $chkNone.Text     = 'Geen C-label bekend'
+    $chkNone.Font     = $font
+    $chkNone.Location = New-Object System.Drawing.Point(240, 90)
+    $chkNone.Size     = New-Object System.Drawing.Size(240, 26)
+    $chkNone.Add_CheckedChanged({ $txtLabel.Enabled = -not $chkNone.Checked; if ($chkNone.Checked) { $txtLabel.Text = '' } })
+
+    $lblCust = New-Object System.Windows.Forms.Label
+    $lblCust.Text     = 'Klant / organisatie'
+    $lblCust.Font     = $fontBold
+    $lblCust.Location = New-Object System.Drawing.Point(24, 136)
+    $lblCust.Size     = New-Object System.Drawing.Size(460, 22)
+
+    $txtCust = New-Object System.Windows.Forms.TextBox
+    $txtCust.Font      = $font
+    $txtCust.Location  = New-Object System.Drawing.Point(24, 162)
+    $txtCust.Size      = New-Object System.Drawing.Size(456, 28)
+    $txtCust.MaxLength = 80
+
+    $lblInfo = New-Object System.Windows.Forms.Label
+    $lblInfo.Text     = 'Het C-label wordt ook de computernaam.'
+    $lblInfo.Font     = New-Object System.Drawing.Font('Segoe UI', 9)
+    $lblInfo.ForeColor = [System.Drawing.Color]::FromArgb(90, 100, 117)
+    $lblInfo.Location = New-Object System.Drawing.Point(24, 200)
+    $lblInfo.Size     = New-Object System.Drawing.Size(460, 20)
+
+    $lblError = New-Object System.Windows.Forms.Label
+    $lblError.Font      = $fontBold
+    $lblError.ForeColor = [System.Drawing.Color]::FromArgb(176, 40, 30)
+    $lblError.Location  = New-Object System.Drawing.Point(24, 228)
+    $lblError.Size      = New-Object System.Drawing.Size(460, 40)
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text     = 'Doorgaan'
+    $btnOk.Font     = $fontBold
+    $btnOk.Size     = New-Object System.Drawing.Size(150, 44)
+    $btnOk.Location = New-Object System.Drawing.Point(330, 290)
+    $btnOk.FlatStyle = 'System'
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text         = 'Terug naar menu'
+    $btnCancel.Font         = $font
+    $btnCancel.Size         = New-Object System.Drawing.Size(150, 44)
+    $btnCancel.Location     = New-Object System.Drawing.Point(166, 290)
+    $btnCancel.DialogResult = 'Cancel'
+    $btnCancel.FlatStyle    = 'System'
+
+    $btnOk.Add_Click({
+        $value = $txtLabel.Text.Trim().ToUpper()
+        if (-not $chkNone.Checked -and $value -notmatch $CLabelPattern) {
+            $lblError.Text = 'Vul een geldig C-label in (C gevolgd door 4 tot 6 cijfers), of vink "Geen C-label bekend" aan.'
+            $txtLabel.Focus()
+            return
+        }
+        $form.DialogResult = 'OK'
+        $form.Close()
+    })
+
+    $form.Controls.AddRange(@($title, $lblLabel, $txtLabel, $chkNone, $lblCust, $txtCust, $lblInfo, $lblError, $btnOk, $btnCancel))
+    $form.AcceptButton = $btnOk
+    $form.CancelButton = $btnCancel
+    $form.Add_Shown({ $txtLabel.Focus() })
+
+    $result = $form.ShowDialog()
+    $info = $null
+    if ($result -eq 'OK') {
+        $info = [pscustomobject]@{
+            CLabel   = if ($chkNone.Checked) { '' } else { $txtLabel.Text.Trim().ToUpper() }
+            Customer = $txtCust.Text.Trim()
+        }
+    }
+    $form.Dispose()
+    return $info
+}
+
+# =================================================================
 # HOOFDSCRIPT LOGICA
 # =================================================================
 
-# --- Stap 1: Roep de GUI aan en wacht op de keuze van de gebruiker ---
-# Het script pauzeert hier totdat er een knop is ingedrukt.
-$userChoice = Show-OSDCloudGUI_Dashboard
+# --- Stap 1: Keuze in het menu, daarna gegevens van het apparaat ---
+# "Terug naar menu" in het gegevensvenster toont het keuzemenu opnieuw.
+$DeployInfo = $null
+do {
+    $userChoice = Show-OSDCloudGUI_Dashboard
+    if ($userChoice -notin ('1', '2', '3', '4')) { break }
+    $DeployInfo = Show-DeploymentInfoForm
+} while (-not $DeployInfo)
+
+if ($DeployInfo) {
+    $shown = if ($DeployInfo.CLabel) { $DeployInfo.CLabel } else { '(geen)' }
+    Write-Host -ForegroundColor Cyan "C-label: $shown - Klant: $($DeployInfo.Customer)"
+}
 
 # --- Stap 2: Nieuwe OSDCloud-module (v2) laden ---
 if ($userChoice -in ('1', '2', '3', '4')) {
@@ -218,6 +344,81 @@ $OSDrive      = 'C:'
 $GuestSSID    = 'Connectium Gasten'      # open WiFi: verbinden in SetupComplete als er geen kabel is
 
 if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
+    # --- Gegevens van het apparaat vastleggen + C-label als computernaam ---
+    if ($DeployInfo) {
+        try {
+            $DeployData = [ordered]@{
+                CLabel        = $DeployInfo.CLabel
+                Customer      = $DeployInfo.Customer
+                DeployDate    = (Get-Date).ToString('s')
+                DeployVersion = 'v2'
+                Choice        = $userChoice
+            }
+
+            # 1. JSON-bestand op C:
+            $DataDir = "$OSDrive\ProgramData\Connectium"
+            New-Item -Path $DataDir -ItemType Directory -Force | Out-Null
+            $DeployData | ConvertTo-Json | Set-Content -Path (Join-Path $DataDir 'Deployment.json') -Encoding UTF8
+
+            # 2. Register (offline SOFTWARE-hive): HKLM\SOFTWARE\Connectium\Deployment
+            $null = reg.exe load 'HKLM\OSD_SOFTWARE' "$OSDrive\Windows\System32\config\SOFTWARE"
+            try {
+                foreach ($k in $DeployData.Keys) {
+                    $null = reg.exe add 'HKLM\OSD_SOFTWARE\Connectium\Deployment' /v $k /t REG_SZ /d "$($DeployData[$k])" /f
+                }
+            }
+            finally {
+                [gc]::Collect(); Start-Sleep -Seconds 1
+                $null = reg.exe unload 'HKLM\OSD_SOFTWARE'
+            }
+            Write-Host -ForegroundColor Green "Gegevens vastgelegd (C-label: $($DeployData.CLabel), klant: $($DeployData.Customer))."
+
+            # 3. C-label als computernaam via unattend.xml (specialize-fase)
+            if ($DeployInfo.CLabel) {
+                $Arch      = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
+                $Panther   = "$OSDrive\Windows\Panther"
+                $Unattend  = Join-Path $Panther 'unattend.xml'
+                $UnNs      = 'urn:schemas-microsoft-com:unattend'
+                New-Item -Path $Panther -ItemType Directory -Force | Out-Null
+
+                if (Test-Path $Unattend) {
+                    [xml]$Xml = Get-Content -Path $Unattend -Raw
+                } else {
+                    [xml]$Xml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><unattend xmlns=`"$UnNs`"></unattend>"
+                }
+                $Ns = New-Object System.Xml.XmlNamespaceManager($Xml.NameTable)
+                $Ns.AddNamespace('u', $UnNs)
+
+                $Settings = $Xml.SelectSingleNode("//u:settings[@pass='specialize']", $Ns)
+                if (-not $Settings) {
+                    $Settings = $Xml.CreateElement('settings', $UnNs)
+                    $Settings.SetAttribute('pass', 'specialize')
+                    [void]$Xml.DocumentElement.AppendChild($Settings)
+                }
+                $Shell = $Settings.SelectSingleNode("u:component[@name='Microsoft-Windows-Shell-Setup']", $Ns)
+                if (-not $Shell) {
+                    $Shell = $Xml.CreateElement('component', $UnNs)
+                    $Shell.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+                    $Shell.SetAttribute('processorArchitecture', $Arch)
+                    $Shell.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+                    $Shell.SetAttribute('language', 'neutral')
+                    $Shell.SetAttribute('versionScope', 'nonSxS')
+                    [void]$Settings.AppendChild($Shell)
+                }
+                $NameNode = $Shell.SelectSingleNode('u:ComputerName', $Ns)
+                if (-not $NameNode) {
+                    $NameNode = $Xml.CreateElement('ComputerName', $UnNs)
+                    [void]$Shell.PrependChild($NameNode)
+                }
+                $NameNode.InnerText = $DeployInfo.CLabel
+                $Xml.Save($Unattend)
+                Write-Host -ForegroundColor Green "Computernaam wordt bij de eerste start: $($DeployInfo.CLabel)"
+            }
+        }
+        catch {
+            Write-Warning "Gegevens apparaat konden niet volledig worden vastgelegd: $($_.Exception.Message)"
+        }
+    }
     Write-Host -ForegroundColor Cyan "Windows Update-stap voorbereiden in SetupComplete..."
 
     $WUDir    = "$OSDrive\ProgramData\Scripts\WindowsUpdates"
