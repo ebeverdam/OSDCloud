@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test8"
+Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test9"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -524,15 +524,68 @@ exit 0
         # Eenmalige taak als SYSTEM; het script toont via ServiceUI de GUI in de gebruikerssessie.
         $TaskName     = 'Connectium\FirstLogonWindowsUpdates'
         $FirstLogonCmd = Join-Path $WUDir 'FirstLogonUpdates.cmd'
+        # FirstLogon.ps1 controleert of de ECHTE gebruiker is aangemeld (niet OOBE/defaultuser0)
+        # en wacht tot het bureaublad er is (na Autopilot-ESP). Pas dan: ronde 2, rapport, opruimen.
+        $FirstLogonPs1 = @'
+# Connectium: eenmalige Windows Update-ronde + installatierapport bij de eerste echte aanmelding
+$TaskName = '__TASK__'
+$SSID     = '__SSID__'
+$Dir      = 'C:\ProgramData\Scripts\WindowsUpdates'
+$LogFile  = Join-Path $Dir 'FirstLogon.log'
+$PsExe    = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+function Log($m) { "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m" | Out-File $LogFile -Append -Encoding utf8 }
+
+function Get-DesktopUser {
+    # Eigenaar van explorer.exe = gebruiker met een bureaublad; defaultuser0 (OOBE) telt niet
+    foreach ($p in @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue)) {
+        $o = Invoke-CimMethod -InputObject $p -MethodName GetOwner -ErrorAction SilentlyContinue
+        if ($o.User -and $o.User -notmatch '^defaultuser\d*$') { return "$($o.Domain)\$($o.User)" }
+    }
+    return $null
+}
+
+Log '--- Taak gestart ---'
+$Setup = Get-ItemProperty 'HKLM:\SYSTEM\Setup' -ErrorAction SilentlyContinue
+if ($Setup.OOBEInProgress -eq 1 -or $Setup.SystemSetupInProgress -eq 1) {
+    Log 'OOBE is nog bezig: overslaan, de taak blijft staan voor de volgende aanmelding.'
+    exit 0
+}
+
+# Wachten (max 30 min) tot het bureaublad van de gebruiker er is; tijdens de Autopilot-ESP is dat nog niet zo
+$User = $null
+for ($i = 0; $i -lt 180; $i++) {
+    $User = Get-DesktopUser
+    if ($User) { break }
+    Start-Sleep -Seconds 10
+}
+if (-not $User) {
+    Log 'Geen bureaublad van een gebruiker gevonden: de taak blijft staan voor de volgende aanmelding.'
+    exit 0
+}
+Log "Gebruiker met bureaublad: $User"
+Start-Sleep -Seconds 20   # bureaublad laten opbouwen
+
+& $PsExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir 'Install-OSUpdates.ps1') -IgnoreOOBECheck
+Log "Windows Update ronde 2 klaar (exitcode $LASTEXITCODE)."
+
+$Report = Join-Path $Dir 'New-InstallReport.ps1'
+if (Test-Path $Report) {
+    & $PsExe -NoProfile -ExecutionPolicy Bypass -File $Report
+    Log "Installatierapport gemaakt (exitcode $LASTEXITCODE)."
+}
+
+schtasks.exe /Delete /TN "$TaskName" /F | Out-Null
+netsh.exe wlan delete profile name="$SSID" | Out-Null   # gasten-WiFi niet meenemen naar de klant
+Log 'Taak en gasten-WiFi-profiel opgeruimd. Klaar.'
+'@
+        $FirstLogonPs1 = $FirstLogonPs1.Replace('__TASK__', $TaskName).Replace('__SSID__', $GuestSSID)
+        Set-Content -Path (Join-Path $WUDir 'FirstLogon.ps1') -Value $FirstLogonPs1 -Encoding UTF8
+
         $FirstLogonContent = @(
             '@echo off'
-            'REM Connectium: eenmalige Windows Update-ronde met GUI bij eerste aanmelding'
-            '"%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\Install-OSUpdates.ps1" -IgnoreOOBECheck'
-            'REM Installatierapport maken en openen in Edge voor de gebruiker'
-            'if exist "C:\ProgramData\Scripts\WindowsUpdates\New-InstallReport.ps1" "%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\New-InstallReport.ps1"'
-            "schtasks /Delete /TN `"$TaskName`" /F"
-            'REM Gasten-WiFi profiel opruimen: niet meenemen naar de klant'
-            "netsh wlan delete profile name=`"$GuestSSID`""
+            'REM Connectium: start FirstLogon.ps1 (controleert zelf of de echte gebruiker is aangemeld)'
+            '"%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\FirstLogon.ps1"'
         )
         Set-Content -Path $FirstLogonCmd -Value $FirstLogonContent -Encoding Ascii
 
