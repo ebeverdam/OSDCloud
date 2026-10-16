@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.16.01
+    Versie: 2026.10.16.02
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -23,8 +23,8 @@ param(
 )
 
 # === Instellingen ===============================================
-$HelpPhone    = '+31 (0)548-722045'
-$HelpMail     = 'support@connectium.nl'
+$HelpPhone    = '[TELEFOON]'
+$HelpMail     = '[E-MAIL]'
 $LogoPath     = 'C:\ProgramData\Scripts\WindowsUpdates\Connectium.png'
 $LabelPattern = '^C\d{4,6}$'      # C-label, bijvoorbeeld C01234
 $LogDir       = Split-Path $OutFile -Parent
@@ -81,7 +81,13 @@ $AadJoined    = (Get-DsregValue 'AzureAdJoined') -eq 'YES'
 $DomainJoined = (Get-DsregValue 'DomainJoined') -eq 'YES'
 $TenantName   = Get-DsregValue 'TenantName'
 $DomainName   = Get-DsregValue 'DomainName'
-$OrgName      = if ($TenantName) { $TenantName } elseif ($DomainName) { $DomainName } else { 'je organisatie' }
+# Gegevens uit de deployment (WinPE-invulvenster): HKLM\SOFTWARE\Connectium\Deployment
+$DeployReg    = Get-Safe { Get-ItemProperty 'HKLM:\SOFTWARE\Connectium\Deployment' }
+$DeployCLabel = Get-Safe { [string]$DeployReg.CLabel } ''
+$Customer     = Get-Safe { [string]$DeployReg.Customer } ''
+$DeployDate   = Get-Safe { [string]$DeployReg.DeployDate } ''
+
+$OrgName      = if ($TenantName) { $TenantName } elseif ($Customer) { $Customer } elseif ($DomainName) { $DomainName } else { 'je organisatie' }
 
 $Intune = Get-Safe {
     [bool](Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments' -ErrorAction Stop |
@@ -241,7 +247,12 @@ $TodoHtml = ($Todo | ForEach-Object {
     "<li class=`"todo`"><span class=`"num`">$i</span><div><strong>$($_.Title)</strong><span>$($_.Detail)</span></div></li>"
 }) -join "`n"
 
-if ($ComputerName -match $LabelPattern) {
+if ($DeployCLabel) {
+    $LabelHtml = "<div><dt>C-label</dt><dd class=`"mono big`">$(Enc $DeployCLabel)</dd></div>"
+    if ($ComputerName -ne $DeployCLabel) {
+        $LabelHtml += "<div><dt>Computernaam</dt><dd class=`"mono`">$(Enc $ComputerName)</dd></div>"
+    }
+} elseif ($ComputerName -match $LabelPattern) {
     $LabelHtml = "<div><dt>C-label</dt><dd class=`"mono big`">$(Enc $ComputerName)</dd></div>"
 } else {
     $LabelHtml = "<div><dt>C-label</dt><dd>Zie de sticker op je computer</dd></div><div><dt>Computernaam</dt><dd class=`"mono`">$(Enc $ComputerName)</dd></div>"
@@ -251,6 +262,8 @@ function Row([string]$k, [string]$v) { "<div><dt>$k</dt><dd>$v</dd></div>" }
 function YesNo([bool]$b) { if ($b) { 'Aan' } else { 'Uit' } }
 
 $Tech1 = @(
+    Row 'Klant'             (Enc $(if ($Customer) { $Customer } else { '-' }))
+    Row 'C-label / naam'    (Enc "$(if ($DeployCLabel) { $DeployCLabel } else { 'niet ingevuld' }) / $ComputerName")
     Row 'Fabrikant / model' (Enc "$Manufacturer $Model")
     Row 'Serienummer'       (Enc $Serial)
     Row 'BIOS'              (Enc "$BiosVersion $BiosDate")
@@ -273,6 +286,7 @@ $Tech2 = @(
     Row 'Apparaten met probleem' "$($ProblemDevs.Count) (zonder driver: $MissingDrv)"
     Row 'Netwerk'              (Enc $NetText)
     Row 'Herstart nodig'       $(if ($RebootPending) { 'Ja' } else { 'Nee' })
+    Row 'Ge&iuml;nstalleerd'   (Enc $(if ($DeployDate) { "$DeployDate (deployment v2)" } else { $InstallText }))
 ) -join "`n"
 
 $UpdRows = if ($Updates.Count) {
