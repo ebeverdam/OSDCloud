@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test5"
+Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test6"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -213,6 +213,7 @@ switch ($userChoice) {
 $WUScriptUrl  = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/scripts/Install-OSUpdates.ps1'
 $WUScriptArgs = '-Silent'                # alle updates: cumulatieve updates (CU), Defender, .NET en drivers
 $OSDrive      = 'C:'
+$GuestSSID    = 'Connectium Gasten'      # open WiFi: verbinden in SetupComplete als er geen kabel is
 
 if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
     Write-Host -ForegroundColor Cyan "Windows Update-stap voorbereiden in SetupComplete..."
@@ -229,8 +230,77 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
         $SetupComplete = Join-Path $SetupScripts 'SetupComplete.cmd'
         New-Item -Path $SetupScripts -ItemType Directory -Force | Out-Null
 
+        # --- Netwerk in SetupComplete: zonder kabel verbinden met het gasten-WiFi ---
+        $WlanXml = @"
+<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>$GuestSSID</name>
+    <SSIDConfig>
+        <SSID>
+            <name>$GuestSSID</name>
+        </SSID>
+    </SSIDConfig>
+    <connectionType>ESS</connectionType>
+    <connectionMode>auto</connectionMode>
+    <MSM>
+        <security>
+            <authEncryption>
+                <authentication>open</authentication>
+                <encryption>none</encryption>
+                <useOneX>false</useOneX>
+            </authEncryption>
+        </security>
+    </MSM>
+</WLANProfile>
+"@
+        Set-Content -Path (Join-Path $WUDir 'GuestWiFi.xml') -Value $WlanXml -Encoding UTF8
+
+        $ConnectScript = @'
+# Connectium: netwerk regelen voor de Windows Update-ronde in SetupComplete
+$SSID        = '__SSID__'
+$ProfilePath = 'C:\ProgramData\Scripts\WindowsUpdates\GuestWiFi.xml'
+$LogFile     = 'C:\ProgramData\Scripts\WindowsUpdates\Network.log'
+$TestUrl     = 'http://www.msftconnecttest.com/connecttest.txt'
+
+function Log($m) { "[$(Get-Date -Format 'HH:mm:ss')] $m" | Out-File $LogFile -Append -Encoding utf8 }
+function Test-Internet {
+    try { (Invoke-WebRequest -Uri $TestUrl -UseBasicParsing -TimeoutSec 5).Content -match 'Microsoft Connect Test' }
+    catch { $false }
+}
+
+Log 'Netwerk controleren...'
+# Eerste start: bekabeld netwerk heeft soms even nodig voor DHCP
+for ($i = 1; $i -le 6; $i++) {
+    if (Test-Internet) { Log 'Internet aanwezig, WiFi niet nodig.'; exit 0 }
+    Start-Sleep -Seconds 5
+}
+
+$Interfaces = netsh wlan show interfaces 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0 -or $Interfaces -notmatch '(?i)(Name|Naam)\s*:') {
+    Log 'Geen WiFi-adapter of driver gevonden. Windows Update wordt overgeslagen of faalt zonder netwerk.'
+    exit 0
+}
+
+Log "Verbinden met '$SSID'..."
+$null = netsh wlan delete profile name="$SSID" 2>&1
+$null = netsh wlan add profile filename="$ProfilePath" user=all 2>&1
+$null = netsh wlan connect name="$SSID" ssid="$SSID" 2>&1
+
+for ($i = 1; $i -le 20; $i++) {
+    Start-Sleep -Seconds 3
+    if (Test-Internet) { Log "Verbonden met '$SSID', internet bereikbaar."; exit 0 }
+}
+Log "Geen internet via '$SSID' (buiten bereik of captive portal?)."
+exit 0
+'@
+        $ConnectScript = $ConnectScript.Replace('__SSID__', $GuestSSID)
+        Set-Content -Path (Join-Path $WUDir 'Connect-Network.ps1') -Value $ConnectScript -Encoding UTF8
+
         # Toevoegen (niet overschrijven): OSDCloud kan hier zelf al driverpack-stappen in zetten
         $Lines = @(
+            ''
+            'REM === Connectium: netwerk (kabel of gasten-WiFi) ==='
+            '%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\Connect-Network.ps1"'
             ''
             'REM === Connectium: Windows Updates (CU + drivers) ==='
             "%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"C:\ProgramData\Scripts\WindowsUpdates\Install-OSUpdates.ps1`" $WUScriptArgs"
@@ -248,6 +318,8 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
             'REM Connectium: eenmalige Windows Update-ronde met GUI bij eerste aanmelding'
             '"%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\Install-OSUpdates.ps1" -IgnoreOOBECheck'
             "schtasks /Delete /TN `"$TaskName`" /F"
+            'REM Gasten-WiFi profiel opruimen: niet meenemen naar de klant'
+            "netsh wlan delete profile name=`"$GuestSSID`""
         )
         Set-Content -Path $FirstLogonCmd -Value $FirstLogonContent -Encoding Ascii
 
