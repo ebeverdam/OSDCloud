@@ -7,12 +7,115 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.02"
+Write-Host -ForegroundColor Green "Version 2026.10.16.03"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
 [System.Threading.Thread]::CurrentThread.CurrentCulture   = 'en-US'
 [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'
+
+#################################################################
+# Keuze v1 (OSD / Start-OSDCloud) of v2 (OSDCloud / Deploy-OSDCloud)
+# Geen keuze binnen de tijd = v1, zodat zero-touch ongewijzigd blijft.
+#################################################################
+$V2ScriptUrl = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/main-OSDeploy-v2.ps1'
+
+function Show-OSDCloudVersionChoice {
+    param([int]$TimeoutSeconds = 15)
+
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $Script:ChoiceRemaining = $TimeoutSeconds
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text            = 'Connectium B.V. - OSDCloud Deployment'
+    $form.Size            = New-Object System.Drawing.Size(560, 290)
+    $form.StartPosition   = 'CenterScreen'
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox     = $false
+    $form.MinimizeBox     = $false
+    $form.TopMost         = $true
+
+    $title = New-Object System.Windows.Forms.Label
+    $title.Text     = 'Welke deployment-versie wil je gebruiken?'
+    $title.Font     = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+    $title.Location = New-Object System.Drawing.Point(20, 20)
+    $title.Size     = New-Object System.Drawing.Size(510, 28)
+
+    $body = New-Object System.Windows.Forms.Label
+    $body.Text     = "v1 - Huidige productieversie (OSD / Start-OSDCloud).`n`n" +
+                     "v2 - Nieuwe versie (OSDCloud / Deploy-OSDCloud), TEST.`n" +
+                     "      Installeert na de herstart Windows Updates en drivers."
+    $body.Font     = New-Object System.Drawing.Font('Segoe UI', 10)
+    $body.Location = New-Object System.Drawing.Point(20, 60)
+    $body.Size     = New-Object System.Drawing.Size(510, 90)
+
+    $btnV1 = New-Object System.Windows.Forms.Button
+    $btnV1.Text         = "v1 - Productie ($Script:ChoiceRemaining)"
+    $btnV1.Font         = New-Object System.Drawing.Font('Segoe UI', 10)
+    $btnV1.Size         = New-Object System.Drawing.Size(240, 50)
+    $btnV1.Location     = New-Object System.Drawing.Point(20, 170)
+    $btnV1.DialogResult = 'Yes'
+    $btnV1.FlatStyle    = 'System'
+
+    $btnV2 = New-Object System.Windows.Forms.Button
+    $btnV2.Text         = 'v2 - Nieuw (test)'
+    $btnV2.Font         = New-Object System.Drawing.Font('Segoe UI', 10)
+    $btnV2.Size         = New-Object System.Drawing.Size(240, 50)
+    $btnV2.Location     = New-Object System.Drawing.Point(285, 170)
+    $btnV2.DialogResult = 'No'
+    $btnV2.FlatStyle    = 'System'
+
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 1000
+    $timer.Add_Tick({
+        $Script:ChoiceRemaining--
+        $btnV1.Text = "v1 - Productie ($Script:ChoiceRemaining)"
+        if ($Script:ChoiceRemaining -le 0) {
+            $timer.Stop()
+            $form.DialogResult = 'Yes'
+            $form.Close()
+        }
+    })
+    # Bij klikken of muisbeweging over het venster: aftellen stoppen, gebruiker kiest zelf
+    $form.Add_MouseEnter({ if ($timer.Enabled) { $timer.Stop(); $btnV1.Text = 'v1 - Productie' } })
+
+    $form.Controls.AddRange(@($title, $body, $btnV1, $btnV2))
+    $form.AcceptButton = $btnV1
+    $form.Add_Shown({ $timer.Start() })
+
+    $result = $form.ShowDialog()
+    $timer.Dispose()
+    $form.Dispose()
+
+    if ($result -eq 'No') { return 'v2' }
+    return 'v1'
+}
+
+$DeployVersion = Show-OSDCloudVersionChoice -TimeoutSeconds 15
+
+if ($DeployVersion -eq 'v2') {
+    Write-Host -ForegroundColor Cyan "Keuze: v2. Script wordt geladen van $V2ScriptUrl"
+    $V2Script = $null
+    try {
+        $V2Script = Invoke-RestMethod -Uri $V2ScriptUrl -UseBasicParsing
+    }
+    catch {
+        Write-Warning "v2 kon niet worden gedownload: $($_.Exception.Message)"
+        Write-Warning "Terugvallen op v1."
+    }
+
+    if ($V2Script) {
+        # Alleen de download valt terug op v1. Gaat er tijdens v2 iets mis, dan NIET
+        # alsnog v1 starten (de schijf kan al gewist zijn): venster openhouden voor de fout.
+        Invoke-Expression $V2Script
+        Write-Warning "v2 is beeindigd zonder herstart. Lees de meldingen hierboven."
+        Read-Host 'Druk op Enter om af te sluiten'
+        exit
+    }
+}
+Write-Host -ForegroundColor Cyan "Keuze: v1 (productie)."
 function Show-OSDCloudGUI_Dashboard {
 
     Add-Type -AssemblyName System.Windows.Forms
