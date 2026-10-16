@@ -23,8 +23,8 @@ param(
 )
 
 # === Instellingen ===============================================
-$HelpPhone    = '[TELEFOON]'
-$HelpMail     = '[E-MAIL]'
+$HelpPhone    = '+31 (0)548-722045'
+$HelpMail     = 'support@connectium.nl'
 $LogoPath     = 'C:\ProgramData\Scripts\WindowsUpdates\Connectium.png'
 $LabelPattern = '^C\d{4,6}$'      # C-label, bijvoorbeeld C01234
 $LogDir       = Split-Path $OutFile -Parent
