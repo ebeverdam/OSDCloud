@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.16.02
+    Versie: 2026.10.17.01
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -138,7 +138,8 @@ $MissingDrv   = @($ProblemDevs | Where-Object { $_.ConfigManagerErrorCode -eq 28
 $Disk    = Get-Safe { Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'" }
 $DiskTot = Get-Safe { [math]::Round($Disk.Size / 1GB) } 0
 $DiskFre = Get-Safe { [math]::Round($Disk.FreeSpace / 1GB) } 0
-$NetUp   = Get-Safe { @(Get-NetAdapter -Physical | Where-Object Status -eq 'Up') } @()
+# Alle actieve adapters met hardware (ook virtuele Hyper-V-kaart), zonder VPN/loopback/virtuele switches
+$NetUp   = Get-Safe { @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.HardwareInterface }) } @()
 $NetText = if ($NetUp.Count) {
     ($NetUp | ForEach-Object {
         $type = if ($_.NdisPhysicalMedium -eq 9) { 'WiFi' } else { 'Kabel' }
@@ -276,7 +277,7 @@ $Tech1 = @(
 ) -join "`n"
 
 $Tech2 = @(
-    Row 'Aangemelde gebruiker' (Enc $(if ($UserName) { "$UserName ($DisplayName)" } else { '-' }))
+    Row 'Aangemelde gebruiker' (Enc $(if ($UserName -and $DisplayName) { "$UserName ($DisplayName)" } elseif ($UserName) { $UserName } else { '-' }))
     Row 'Entra ID / domein'    (Enc "AzureAdJoined: $(if ($AadJoined) {'Ja'} else {'Nee'}) - DomainJoined: $(if ($DomainJoined) {'Ja'} else {'Nee'}) - $OrgName")
     Row 'Intune-inschrijving'  $(if ($Intune) { 'Ja' } else { 'Nee' })
     Row 'Autopilot-profiel'    (Enc $(if ($AutopilotProfile) { "$AutopilotProfile ($AutopilotTenant)" } else { '-' }))
@@ -394,7 +395,7 @@ $TodoHtml
 <h2 id="help-title">Hulp nodig?</h2>
 <p>Neem contact op met de servicedesk van Connectium. Noem dan je C-label: dat is het nummer op de sticker van je computer. Zo kunnen we je sneller helpen.</p>
 <div class="btns">
-<a class="btn primary" href="tel:$(Enc ($HelpPhone -replace '\s',''))">$(Enc $HelpPhone)</a>
+<a class="btn primary" href="tel:$(Enc (($HelpPhone -replace '\(0\)', '') -replace '[^\d+]', ''))">$(Enc $HelpPhone)</a>
 <a class="btn ghost" href="mailto:$(Enc $HelpMail)">$(Enc $HelpMail)</a>
 </div>
 </div>
@@ -452,20 +453,55 @@ function Open-ReportForUser([string]$Path) {
         "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-    if ($Edge) { $Exe = $Edge; $Arg = "--no-first-run --new-window `"$Path`"" }
-    else       { $Exe = 'explorer.exe'; $Arg = "`"$Path`"" }
-
     $IsSystem = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value -eq 'S-1-5-18'
-    if (-not $IsSystem) { Start-Process -FilePath $Exe -ArgumentList $Arg; return }
 
-    # Als SYSTEM: via een tijdelijke taak in de sessie van de aangemelde gebruiker (groep Users, SID)
-    $TaskName = 'Connectium-OpenInstallReport'
-    $Action    = New-ScheduledTaskAction -Execute $Exe -Argument $Arg
-    $Principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
-    Register-ScheduledTask -TaskName $TaskName -Action $Action -Principal $Principal -Force | Out-Null
-    Start-ScheduledTask -TaskName $TaskName
-    Start-Sleep -Seconds 10
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    if (-not $Edge) {
+        $Exe = 'explorer.exe'; $Arg = "`"$Path`""
+    }
+    else {
+        # Rapport openen in een APART, tijdelijk Edge-profiel, InPrivate:
+        # - het echte Edge-profiel van de gebruiker wordt niet aangeraakt (diens eerste start blijft normaal)
+        # - geen aanmelden/synchroniseren-vragen
+        $ProfileDir = Join-Path (Split-Path $Path -Parent) 'RapportBrowser'
+        New-Item -Path $ProfileDir -ItemType Directory -Force | Out-Null
+        if ($IsSystem) { $null = icacls.exe $ProfileDir /grant '*S-1-5-32-545:(OI)(CI)M' /T /Q }
+        $Exe = $Edge
+        $Arg = "--user-data-dir=`"$ProfileDir`" --inprivate --no-first-run --no-default-browser-check --start-maximized `"$Path`""
+    }
+
+    # Edge-welkomstwizard tijdelijk uitzetten (machinebeleid HideFirstRunExperience).
+    # Alleen als het beleid nog niet bestaat; daarna weer verwijderd. Edge leest het alleen bij het starten.
+    $PolicyKey   = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
+    $PolicyAdded = $false
+    if ($Edge -and $IsSystem) {
+        $Existing = (Get-ItemProperty -Path $PolicyKey -Name HideFirstRunExperience -ErrorAction SilentlyContinue).HideFirstRunExperience
+        if ($null -eq $Existing) {
+            New-Item -Path $PolicyKey -Force | Out-Null
+            New-ItemProperty -Path $PolicyKey -Name HideFirstRunExperience -Value 1 -PropertyType DWord -Force | Out-Null
+            $PolicyAdded = $true
+        }
+    }
+
+    try {
+        if (-not $IsSystem) { Start-Process -FilePath $Exe -ArgumentList $Arg; Start-Sleep -Seconds 15; return }
+
+        # Als SYSTEM: via een tijdelijke taak in de sessie van de aangemelde gebruiker (groep Users, SID)
+        $TaskName  = 'Connectium-OpenInstallReport'
+        $Action    = New-ScheduledTaskAction -Execute $Exe -Argument $Arg
+        $Principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
+        Register-ScheduledTask -TaskName $TaskName -Action $Action -Principal $Principal -Force | Out-Null
+        Start-ScheduledTask -TaskName $TaskName
+        Start-Sleep -Seconds 20   # Edge laten starten (en het beleid laten inlezen)
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    }
+    finally {
+        if ($PolicyAdded) {
+            Remove-ItemProperty -Path $PolicyKey -Name HideFirstRunExperience -ErrorAction SilentlyContinue
+            # Lege beleidssleutel opruimen als wij die hebben aangemaakt en er verder niets in staat
+            $Key = Get-Item -Path $PolicyKey -ErrorAction SilentlyContinue
+            if ($Key -and $Key.ValueCount -eq 0 -and $Key.SubKeyCount -eq 0) { Remove-Item -Path $PolicyKey -Force -ErrorAction SilentlyContinue }
+        }
+    }
 }
 
 if (-not $NoOpen) {
