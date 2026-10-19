@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.13
+    Versie: 2026.10.19.15
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -534,7 +534,7 @@ function Start-Ui {
             'search' {
                 Set-Icon 0xE721 '#EAF0F8' '#24508A'
                 $c.TxtTitle.Text = if ($FirstName) { "Hoi $FirstName, je computer wordt bijgewerkt" } else { 'Je computer wordt bijgewerkt' }
-                $c.TxtBody.Text = T 'We kijken nog &eacute;&eacute;n keer of er updates zijn. Je kunt gewoon verder werken.'
+                $c.TxtBody.Text = T 'We kijken nog &eacute;&eacute;n keer of er updates zijn. Je kunt je computer ondertussen gewoon gebruiken.'
                 $c.TxtCurrent.Text = T 'Zoeken naar updates&hellip;'; $c.TxtPercent.Text = ''
                 if ($s -and $s.groups) {
                     $c.DetailsBox.Visibility = 'Visible'
@@ -693,11 +693,18 @@ function Start-Ui {
                 </StackPanel>
               </Grid>
             </Border>
+
+            <Border x:Name="RTech" Visibility="Collapsed" Margin="0,4,0,8" BorderBrush="#EEF0F3" BorderThickness="1" CornerRadius="10" Padding="16,6,16,10">
+              <StackPanel>
+                <StackPanel x:Name="RTechList"/>
+                <Button x:Name="RBtnHtml" Style="{StaticResource BtnLink}" Content="Volledig rapport met update-overzicht openen" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
 
         <Grid Grid.Row="3" Margin="32,8,24,16">
-          <Button x:Name="RBtnTech" Style="{StaticResource BtnLink}" Content="Technische details" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+          <Button x:Name="RBtnTech" Style="{StaticResource BtnLink}" Content="Technische details tonen" HorizontalAlignment="Left" VerticalAlignment="Center"/>
           <Button x:Name="RBtnClose" Style="{StaticResource BtnPri}" Content="Sluiten" HorizontalAlignment="Right"/>
         </Grid>
       </Grid>
@@ -707,7 +714,7 @@ function Start-Ui {
 '@
         $rw = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $rx))
         $f = @{}
-        foreach ($n in 'Header','RLogo','RLogoText','RBtnX','RScroll','RGreeting','RIntro','RDone','RTodo','RHelp','RLabelKey','RLabel','RSerial','RBtnTech','RBtnClose') { $f[$n] = $rw.FindName($n) }
+        foreach ($n in 'Header','RLogo','RLogoText','RBtnX','RScroll','RGreeting','RIntro','RDone','RTodo','RHelp','RLabelKey','RLabel','RSerial','RBtnTech','RBtnClose','RTech','RTechList','RBtnHtml') { $f[$n] = $rw.FindName($n) }
 
         if ($bmp) { $f.RLogo.Source = $bmp } else { $f.RLogo.Visibility = 'Collapsed'; $f.RLogoText.Visibility = 'Visible' }
         if ($win.Icon) { $rw.Icon = $win.Icon }
@@ -768,7 +775,34 @@ function Start-Ui {
         $f.Header.Add_MouseLeftButtonDown({ try { $rw.DragMove() } catch {} })
         $f.RBtnX.Add_Click({ $rw.Close() })
         $f.RBtnClose.Add_Click({ $rw.Close() })
-        $f.RBtnTech.Add_Click({ Open-ReportInEdge })
+        # Technische details: uitklapbaar in het venster; volledige HTML (met updates) via link
+        $first = $true
+        foreach ($t in @($r.tech)) {
+            $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,6,0,0'
+            $c0 = New-Object System.Windows.Controls.ColumnDefinition; $c0.Width = '170'; $g.ColumnDefinitions.Add($c0)
+            $g.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+            $k = New-Object System.Windows.Controls.TextBlock; $k.Text = [string]$t.k; $k.FontSize = 13; $k.Foreground = (B '#5A6475'); $k.TextWrapping = 'Wrap'
+            $v = New-Object System.Windows.Controls.TextBlock; $v.Text = [string]$t.v; $v.FontSize = 13; $v.TextWrapping = 'Wrap'; $v.Margin = '12,0,0,0'
+            [System.Windows.Controls.Grid]::SetColumn($v, 1)
+            $g.Children.Add($k) | Out-Null; $g.Children.Add($v) | Out-Null
+            if (-not $first) {
+                $sep = New-Object System.Windows.Controls.Border; $sep.Height = 1; $sep.Background = (B '#F1F3F6'); $sep.Margin = '0,6,0,0'
+                $f.RTechList.Children.Add($sep) | Out-Null
+            }
+            $f.RTechList.Children.Add($g) | Out-Null; $first = $false
+        }
+        if (-not @($r.tech).Count) { $f.RBtnTech.Content = 'Technische details'; $f.RBtnTech.Add_Click({ Open-ReportInEdge }) }
+        else {
+            $f.RBtnTech.Add_Click({
+                if ($f.RTech.Visibility -eq 'Visible') {
+                    $f.RTech.Visibility = 'Collapsed'; $f.RBtnTech.Content = 'Technische details tonen'
+                } else {
+                    $f.RTech.Visibility = 'Visible'; $f.RBtnTech.Content = 'Technische details verbergen'
+                    $rw.Dispatcher.BeginInvoke([Action]{ $f.RTech.BringIntoView() }, 'Background') | Out-Null
+                }
+            })
+        }
+        $f.RBtnHtml.Add_Click({ Open-ReportInEdge })
         $rw.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Escape') { $rw.Close() } })
         $rw.Add_Loaded({ $f.RBtnClose.Focus() | Out-Null })
 
