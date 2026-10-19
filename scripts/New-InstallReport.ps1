@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.05
+    Versie: 2026.10.19.06
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -281,7 +281,11 @@ if ($DeployCLabel) {
     $LabelHtml = "<div><dt>C-label</dt><dd>Zie de sticker op je computer</dd></div><div><dt>Computernaam</dt><dd class=`"mono`">$(Enc $ComputerName)</dd></div>"
 }
 
-function Row([string]$k, [string]$v) { "<div><dt>$k</dt><dd>$v</dd></div>" }
+$TechPairs = New-Object System.Collections.ArrayList   # ook naar JSON voor het rapportvenster
+function Row([string]$k, [string]$v) {
+    [void]$TechPairs.Add([ordered]@{ k = [System.Net.WebUtility]::HtmlDecode($k); v = [System.Net.WebUtility]::HtmlDecode(($v -replace '<[^>]+>', '')) })
+    "<div><dt>$k</dt><dd>$v</dd></div>"
+}
 function YesNo([bool]$b) { if ($b) { 'Aan' } else { 'Uit' } }
 
 $Tech1 = @(
@@ -481,6 +485,7 @@ $Json = [ordered]@{
     clabel   = $DeployCLabel
     serial   = $Serial
     html     = $OutFile
+    tech     = @($TechPairs)
 }
 $JsonFile = [IO.Path]::ChangeExtension($OutFile, '.json')
 [IO.File]::WriteAllText($JsonFile, ($Json | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
