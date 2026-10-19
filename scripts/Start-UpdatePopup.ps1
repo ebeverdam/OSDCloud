@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.08
+    Versie: 2026.10.19.10
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -414,7 +414,7 @@ function Start-Ui {
             <StackPanel>
               <Button x:Name="BtnDetails" Background="Transparent" BorderThickness="0" Padding="14,0" MinHeight="44" HorizontalContentAlignment="Stretch" Cursor="Hand">
                 <Grid>
-                  <TextBlock Text="Wat wordt er ge&#239;nstalleerd?" FontWeight="SemiBold"/>
+                  <TextBlock Text="Updates per onderdeel" FontWeight="SemiBold"/>
                   <TextBlock x:Name="Chevron" Text="&#xE70E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                 </Grid>
               </Button>
@@ -506,7 +506,7 @@ function Start-Ui {
         }
         $row.Label.Foreground = (B '#26324A')
         $row.Meta.Text = if ($state -eq 'pending' -and $total -eq 0) { '' }   # nog aan het zoeken
-                         elseif ($total -eq 0) { 'geen nodig' }
+                         elseif ($total -eq 0) { 'Up-to-date' }
                          elseif ($state -eq 'active') { "$done van $total" }
                          elseif ($total -eq 1) { '1 update' } else { "$total updates" }
     }
