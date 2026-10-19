@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.17.01
+    Versie: 2026.10.19.01
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -489,7 +489,8 @@ function Open-ReportForUser([string]$Path) {
         $TaskName  = 'Connectium-OpenInstallReport'
         $Action    = New-ScheduledTaskAction -Execute $Exe -Argument $Arg
         $Principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
-        Register-ScheduledTask -TaskName $TaskName -Action $Action -Principal $Principal -Force | Out-Null
+        $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries   # ook op accu
+        Register-ScheduledTask -TaskName $TaskName -Action $Action -Principal $Principal -Settings $Settings -Force | Out-Null
         Start-ScheduledTask -TaskName $TaskName
         Start-Sleep -Seconds 20   # Edge laten starten (en het beleid laten inlezen)
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
