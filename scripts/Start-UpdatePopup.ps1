@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.01
+    Versie: 2026.10.19.04
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -171,7 +171,10 @@ function Start-Worker {
         [pscustomobject]@{ Update = $_; Group = $g; Order = $order[$g]; Sub = $sub; Name = (Get-FriendlyName $_ $g) }
     } | Sort-Object Order, Sub)
 
-    foreach ($grp in $status.groups) { $k = $grp.key; $grp.total = @($plan | Where-Object { $_.Group -eq $k }).Count }
+    foreach ($grp in $status.groups) {
+        $k = $grp.key; $grp.total = @($plan | Where-Object { $_.Group -eq $k }).Count
+        if ($grp.total -eq 0) { $grp.state = 'none' }   # niets nodig = in orde (groen vinkje)
+    }
     $status.total = $plan.Count
     foreach ($p in $plan) { Write-PopupLog (" - [{0}] {1}" -f $p.Group, $p.Update.Title) }
 
@@ -219,6 +222,13 @@ function Start-Worker {
     foreach ($g in $status.groups) { if ($g.total -eq 0) { $g.state = 'none' } elseif ($g.done -ge $g.total) { $g.state = 'done' } elseif ($g.state -eq 'active') { $g.state = 'pending' } }
     if ((Test-Path $Script:CancelFlag) -and $status.installed -lt $status.total) { $status.skipped = $true }
 
+    # Eindstand (volle balk, alle vinkjes) even zichtbaar laten voordat de popup verder gaat
+    if ($status.stage -eq 'install') {
+        $status.current = ''
+        Write-Status $status
+        Start-Sleep -Seconds 4
+    }
+
     # --- Afronden: rapport klaarzetten ---
     if ($status.stage -ne 'error') { $status.stage = 'finishing' }
     $status.current = ''
@@ -231,7 +241,8 @@ function Start-Worker {
         } elseif ($status.skipped) {
             $status.message = T ("$ok van $($status.total) updates ge&iuml;nstalleerd. De rest installeert Windows later vanzelf.")
         } else {
-            $status.message = T ("$ok updates ge&iuml;nstalleerd.")
+            $woord = if ($ok -eq 1) { 'update' } else { 'updates' }
+            $status.message = T ("$ok $woord ge&iuml;nstalleerd.")
         }
         if ($status.failed -gt 0) { $status.message += T (" $($status.failed) konden niet worden ge&iuml;nstalleerd; Windows probeert het later opnieuw.") }
         if ($status.rebootRequired) { $status.message += T ' Start je computer &eacute;&eacute;n keer opnieuw op om alles af te ronden.' }
@@ -371,8 +382,9 @@ function Start-Ui {
         </StackPanel>
 
         <Grid Margin="24,16,24,20">
-          <TextBlock x:Name="TxtHelp" FontSize="12" Foreground="#5A6475" VerticalAlignment="Center"/>
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock x:Name="TxtHelp" Grid.Column="0" Margin="0,0,12,0" FontSize="12" Foreground="#5A6475" VerticalAlignment="Center" TextWrapping="Wrap"/>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
             <Button x:Name="BtnSecondary" Style="{StaticResource BtnSec}"/>
             <Button x:Name="BtnPrimary" Style="{StaticResource BtnPri}"/>
           </StackPanel>
@@ -401,7 +413,7 @@ function Start-Ui {
         $bmp.BeginInit(); $bmp.UriSource = New-Object System.Uri($Script:LogoPath); $bmp.CacheOption = 'OnLoad'; $bmp.EndInit()
         $c.Logo.Source = $bmp
     } else { $c.Logo.Visibility = 'Collapsed'; $c.LogoText.Visibility = 'Visible' }
-    $c.TxtHelp.Text = "Hulp nodig? $Script:HelpPhone"
+    $c.TxtHelp.Text = "Hulp nodig?`n$Script:HelpPhone"
 
     # Detailregels (4 vaste categorieen)
     $rows = @{}
@@ -432,12 +444,12 @@ function Start-Ui {
 
     function Set-RowState($row, [string]$state, [int]$done, [int]$total) {
         switch ($state) {
-            'done'    { $row.Icon.Background = (B '#E6F3EB'); $row.Icon.BorderBrush = (B '#E6F3EB'); $row.Glyph.Text = [string][char]0xE73E; $row.Glyph.Foreground = (B '#17643B') }
+            { $_ -in 'done', 'none' } { $row.Icon.Background = (B '#E6F3EB'); $row.Icon.BorderBrush = (B '#E6F3EB'); $row.Glyph.Text = [string][char]0xE73E; $row.Glyph.Foreground = (B '#17643B') }
             'active'  { $row.Icon.Background = (B '#FFFFFF'); $row.Icon.BorderBrush = (B '#26324A'); $row.Glyph.Text = [string][char]0xE895; $row.Glyph.Foreground = (B '#26324A') }
             default   { $row.Icon.Background = (B '#FFFFFF'); $row.Icon.BorderBrush = (B '#D5DAE1'); $row.Glyph.Text = '' }
         }
-        $row.Label.Foreground = if ($state -eq 'none') { (B '#8A93A3') } else { (B '#26324A') }
-        $row.Meta.Text = if ($total -eq 0) { 'geen' }
+        $row.Label.Foreground = (B '#26324A')
+        $row.Meta.Text = if ($total -eq 0) { 'geen nodig' }
                          elseif ($state -eq 'active') { "$done van $total" }
                          elseif ($total -eq 1) { '1 update' } else { "$total updates" }
     }
@@ -473,7 +485,7 @@ function Start-Ui {
                 $c.TxtTitle.Text = 'Updates installeren'
                 $c.TxtBody.Text = "$n van $($s.total) updates. Je kunt gewoon verder werken."
                 $pct = if ($s.total) { [int]([Math]::Round($s.installed / $s.total * 100)) } else { 0 }
-                $c.TxtCurrent.Text = "Nu bezig: $($s.current)"; $c.TxtPercent.Text = "$pct%"
+                $c.TxtCurrent.Text = if ($s.current) { "Nu bezig: $($s.current)" } else { '' }; $c.TxtPercent.Text = "$pct%"
                 $c.Fill.Margin = (New-Object System.Windows.Thickness(0)); $c.Fill.Width = [Math]::Max(0, $c.Track.ActualWidth * $pct / 100)
                 $c.DetailsBox.Visibility = 'Visible'
                 foreach ($g in $s.groups) { Set-RowState $rows[$g.key] $g.state $g.done $g.total }
@@ -491,6 +503,10 @@ function Start-Ui {
                 $c.TxtTitle.Text = 'Bijna klaar'
                 $c.TxtBody.Text = 'We ronden af en zetten je opleverrapport klaar.'
                 $c.TxtCurrent.Text = T 'Afronden&hellip;'; $c.TxtPercent.Text = ''
+                if ($s -and $s.total -gt 0) {
+                    $c.DetailsBox.Visibility = 'Visible'
+                    foreach ($g in $s.groups) { Set-RowState $rows[$g.key] $g.state $g.done $g.total }
+                }
                 Show-Buttons $null $null
             }
             { $_ -in 'done', 'error' } {
@@ -499,7 +515,7 @@ function Start-Ui {
                 $c.TxtBody.Text = [string]$s.message
                 $c.ProgressArea.Visibility = 'Collapsed'
                 $ui.allowClose = $true
-                if ($s.reportReady) { $c.InfoBox.Visibility = 'Visible'; Show-Buttons 'Sluiten' 'Opleverrapport bekijken' }
+                if ($s.reportReady) { Show-Buttons 'Sluiten' 'Opleverrapport bekijken' }
                 else { Show-Buttons 'Sluiten' $null }
             }
         }
