@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.16
+    Versie: 2026.10.19.17
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -48,8 +48,14 @@ function Write-PopupLog([string]$Msg, [string]$Level = 'INFO') {
     try {
         if (-not (Test-Path $Script:ScriptDir)) { New-Item -Path $Script:ScriptDir -ItemType Directory -Force | Out-Null }
         "[{0}] [{1}] [{2}] {3}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $(if ($Worker) { 'Worker' } else { 'UI' }), $Msg |
-            Out-File -FilePath $Script:LogFile -Append -Encoding utf8
-    } catch {}
+            Out-File -FilePath $Script:LogFile -Append -Encoding utf8 -ErrorAction Stop
+    } catch {
+        # Gebruiker mag het SYSTEM-log niet schrijven: dan in de uitwisselmap (Users: wijzigen)
+        try {
+            "[{0}] [{1}] [UI] {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $Msg |
+                Out-File -FilePath (Join-Path $Script:PopupDir 'Ui.log') -Append -Encoding utf8 -ErrorAction Stop
+        } catch {}
+    }
 }
 
 # =================================================================
@@ -796,7 +802,7 @@ function Start-Ui {
                     $f.RTech.Visibility = 'Collapsed'; $f.RBtnTech.Content = 'Technische details tonen'
                 } else {
                     $f.RTech.Visibility = 'Visible'; $f.RBtnTech.Content = 'Technische details verbergen'
-                    $rw.Dispatcher.BeginInvoke([Action]{ $f.RTech.BringIntoView() }, 'Background') | Out-Null
+                    try { $rw.UpdateLayout(); $f.RScroll.ScrollToEnd() } catch {}
                 }
             })
         }
@@ -805,19 +811,22 @@ function Start-Ui {
         $rw.Add_Loaded({ $f.RBtnClose.Focus() | Out-Null })
 
         Write-PopupLog 'Opleverrapport getoond in rapportvenster.'
+        $rw.Add_ContentRendered({ $Script:ReportShown = $true })
         [void]$rw.ShowDialog()
     }
 
     function Open-Report {
         $json = [IO.Path]::ChangeExtension($Script:ReportHtml, '.json')
         if (Test-Path $json) {
+            $Script:ReportShown = $false
             try {
                 $r = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json
                 $win.Hide()
                 Show-ReportWindow $r
                 return
             } catch {
-                Write-PopupLog "Rapportvenster mislukt, terugval op Edge: $($_.Exception.Message)" 'WARN'
+                Write-PopupLog "Rapportvenster: $($_.Exception.Message)" 'WARN'
+                if ($Script:ReportShown) { return }   # venster was al open: geen Edge erachteraan
                 try { $win.Show() } catch {}
             }
         }
