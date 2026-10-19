@@ -18,13 +18,14 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.10
+    Versie: 2026.10.19.11
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
 param(
     [switch]$Worker,
-    [switch]$Ui
+    [switch]$Ui,
+    [switch]$ReportOnly    # alleen het rapportvenster tonen (testen, of later nog eens bekijken)
 )
 
 # === Gedeelde instellingen ======================================
@@ -459,6 +460,7 @@ function Start-Ui {
     function B([string]$hex) { $conv.ConvertFromString($hex) }
 
     # Logo
+    $bmp = $null
     if (Test-Path $Script:LogoPath) {
         $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
         $bmp.BeginInit(); $bmp.UriSource = New-Object System.Uri($Script:LogoPath); $bmp.CacheOption = 'OnLoad'; $bmp.EndInit()
@@ -584,7 +586,7 @@ function Start-Ui {
         $c.Chevron.Text = if ($ui.detailsOpen) { [string][char]0xE70E } else { [string][char]0xE70D }
     }
 
-    function Open-Report {
+    function Open-ReportInEdge {
         $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") |
             Where-Object { Test-Path $_ } | Select-Object -First 1
         try {
@@ -594,8 +596,200 @@ function Start-Ui {
                 Start-Process -FilePath $Script:ReportHtml
             }
             New-Item -Path $Script:OpenedFlag -ItemType File -Force | Out-Null
-            Write-PopupLog 'Opleverrapport geopend.'
+            Write-PopupLog 'Opleverrapport geopend in Edge.'
         } catch { Write-PopupLog "Rapport openen mislukt: $($_.Exception.Message)" 'ERROR' }
+    }
+
+    # Rapportvenster in popupstijl. Inhoud uit Installatierapport.json (New-InstallReport.ps1).
+    # Technische details blijven in de HTML (link onderaan, opent Edge).
+    function Show-ReportWindow($r) {
+        [xml]$rx = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Je nieuwe computer is klaar" Width="680" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen" ShowInTaskbar="True"
+        FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="14" Foreground="#26324A">
+  <Window.Resources>
+    <Style x:Key="BtnBase" TargetType="Button">
+      <Setter Property="MinHeight" Value="36"/><Setter Property="Padding" Value="16,0"/><Setter Property="Margin" Value="8,0,0,0"/>
+      <Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Opacity" Value="0.88"/></Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Bd" Property="BorderThickness" Value="2"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="BtnPri" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+      <Setter Property="Background" Value="#26324A"/><Setter Property="BorderBrush" Value="#26324A"/><Setter Property="Foreground" Value="#FFFFFF"/>
+    </Style>
+    <Style x:Key="BtnLink" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/><Setter Property="Foreground" Value="#5A6475"/><Setter Property="FontSize" Value="13"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <TextBlock x:Name="T" Text="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}" Foreground="{TemplateBinding Foreground}"/>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="T" Property="TextDecorations" Value="Underline"/></Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="T" Property="TextDecorations" Value="Underline"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+
+  <Grid Margin="16">
+    <Border Background="#FFFFFF" CornerRadius="12" BorderBrush="#DDE1E7" BorderThickness="1">
+      <Border.Effect><DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.22" Color="#101828"/></Border.Effect>
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+
+        <Grid x:Name="Header" Margin="20,12,12,12" Background="Transparent">
+          <Image x:Name="RLogo" Height="22" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+          <TextBlock x:Name="RLogoText" Text="CONNECTIUM" FontWeight="SemiBold" VerticalAlignment="Center" Visibility="Collapsed"/>
+          <Button x:Name="RBtnX" HorizontalAlignment="Right" Width="40" Height="32" Background="Transparent" BorderThickness="0" Cursor="Hand" AutomationProperties.Name="Sluiten">
+            <TextBlock Text="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12" Foreground="#4A5568"/>
+          </Button>
+        </Grid>
+        <Border Grid.Row="1" Height="1" Background="#EEF0F3"/>
+
+        <ScrollViewer x:Name="RScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="32,24,32,8">
+            <Border HorizontalAlignment="Left" Background="#E6F3EB" CornerRadius="12" Padding="10,3">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#xE73E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="11" Foreground="#17643B" VerticalAlignment="Center"/>
+                <TextBlock Text="Klaar voor gebruik" Margin="6,0,0,0" FontSize="13" FontWeight="SemiBold" Foreground="#17643B"/>
+              </StackPanel>
+            </Border>
+            <TextBlock x:Name="RGreeting" Margin="0,12,0,0" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock x:Name="RIntro" Margin="0,6,0,0" Foreground="#4A5568" TextWrapping="Wrap"/>
+
+            <TextBlock Text="Wat we hebben gedaan" Margin="0,24,0,8" FontSize="16" FontWeight="SemiBold"/>
+            <StackPanel x:Name="RDone"/>
+
+            <TextBlock Text="Wat je nog moet doen" Margin="0,20,0,8" FontSize="16" FontWeight="SemiBold"/>
+            <StackPanel x:Name="RTodo"/>
+
+            <Border Margin="0,20,0,16" Background="#26324A" CornerRadius="10" Padding="20,16">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="Hulp nodig?" FontSize="16" FontWeight="SemiBold" Foreground="#FFFFFF"/>
+                  <TextBlock x:Name="RHelp" Margin="0,4,16,0" Foreground="#D5DAE1" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                  <TextBlock x:Name="RLabelKey" Text="C-label" FontSize="12" Foreground="#AEB6C4"/>
+                  <TextBlock x:Name="RLabel" FontFamily="Consolas" FontSize="20" FontWeight="SemiBold" Foreground="#FFFFFF"/>
+                  <TextBlock x:Name="RSerial" Margin="0,2,0,0" FontSize="12" Foreground="#AEB6C4"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="3" Margin="32,8,24,20">
+          <Button x:Name="RBtnTech" Style="{StaticResource BtnLink}" Content="Technische details" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+          <Button x:Name="RBtnClose" Style="{StaticResource BtnPri}" Content="Sluiten" HorizontalAlignment="Right"/>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>
+'@
+        $rw = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $rx))
+        $f = @{}
+        foreach ($n in 'Header','RLogo','RLogoText','RBtnX','RScroll','RGreeting','RIntro','RDone','RTodo','RHelp','RLabelKey','RLabel','RSerial','RBtnTech','RBtnClose') { $f[$n] = $rw.FindName($n) }
+
+        if ($bmp) { $f.RLogo.Source = $bmp } else { $f.RLogo.Visibility = 'Collapsed'; $f.RLogoText.Visibility = 'Visible' }
+        if ($win.Icon) { $rw.Icon = $win.Icon }
+        $rw.MaxHeight = [System.Windows.SystemParameters]::WorkArea.Height - 24
+        $f.RScroll.MaxHeight = $rw.MaxHeight - 170
+
+        $f.RGreeting.Text = [string]$r.greeting
+        $f.RIntro.Text    = [string]$r.intro
+
+        # Wat we hebben gedaan: rondje met vinkje / klok / i + titel + toelichting
+        foreach ($d in @($r.done)) {
+            $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,6,0,6'
+            $c0 = New-Object System.Windows.Controls.ColumnDefinition; $c0.Width = 'Auto'; $g.ColumnDefinitions.Add($c0)
+            $g.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+            $ic = New-Object System.Windows.Controls.Border; $ic.Width = 28; $ic.Height = 28; $ic.CornerRadius = 14; $ic.VerticalAlignment = 'Top'
+            $gl = New-Object System.Windows.Controls.TextBlock; $gl.FontFamily = 'Segoe Fluent Icons, Segoe MDL2 Assets'; $gl.FontSize = 12
+            $gl.HorizontalAlignment = 'Center'; $gl.VerticalAlignment = 'Center'
+            switch ([string]$d.kind) {
+                'ok'   { $ic.Background = (B '#E6F3EB'); $gl.Foreground = (B '#17643B'); $gl.Text = [string][char]0xE73E }
+                'busy' { $ic.Background = (B '#FBF0DE'); $gl.Foreground = (B '#7F4A00'); $gl.Text = [string][char]0xE823 }
+                default{ $ic.Background = (B '#EAF0F8'); $gl.Foreground = (B '#24508A'); $gl.Text = [string][char]0xE946 }
+            }
+            $ic.Child = $gl; $g.Children.Add($ic) | Out-Null
+            $sp = New-Object System.Windows.Controls.StackPanel; $sp.Margin = '12,3,0,0'; [System.Windows.Controls.Grid]::SetColumn($sp, 1)
+            $t1 = New-Object System.Windows.Controls.TextBlock; $t1.Text = [string]$d.title; $t1.FontWeight = 'SemiBold'; $t1.TextWrapping = 'Wrap'
+            $t2 = New-Object System.Windows.Controls.TextBlock; $t2.Text = [string]$d.detail; $t2.Foreground = (B '#4A5568'); $t2.FontSize = 13; $t2.TextWrapping = 'Wrap'; $t2.Margin = '0,2,0,0'
+            $sp.Children.Add($t1) | Out-Null; $sp.Children.Add($t2) | Out-Null; $g.Children.Add($sp) | Out-Null
+            $f.RDone.Children.Add($g) | Out-Null
+        }
+
+        # Wat je nog moet doen: genummerd
+        $i = 0
+        foreach ($t in @($r.todo)) {
+            $i++
+            $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,6,0,6'
+            $c0 = New-Object System.Windows.Controls.ColumnDefinition; $c0.Width = 'Auto'; $g.ColumnDefinitions.Add($c0)
+            $g.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+            $nb = New-Object System.Windows.Controls.Border; $nb.Width = 28; $nb.Height = 28; $nb.CornerRadius = 14; $nb.VerticalAlignment = 'Top'
+            $nb.BorderBrush = (B '#26324A'); $nb.BorderThickness = 1.5
+            $nt = New-Object System.Windows.Controls.TextBlock; $nt.Text = "$i"; $nt.FontWeight = 'SemiBold'; $nt.FontSize = 13
+            $nt.HorizontalAlignment = 'Center'; $nt.VerticalAlignment = 'Center'; $nb.Child = $nt; $g.Children.Add($nb) | Out-Null
+            $sp = New-Object System.Windows.Controls.StackPanel; $sp.Margin = '12,3,0,0'; [System.Windows.Controls.Grid]::SetColumn($sp, 1)
+            $t1 = New-Object System.Windows.Controls.TextBlock; $t1.Text = [string]$t.title; $t1.FontWeight = 'SemiBold'; $t1.TextWrapping = 'Wrap'
+            $t2 = New-Object System.Windows.Controls.TextBlock; $t2.Text = [string]$t.detail; $t2.Foreground = (B '#4A5568'); $t2.FontSize = 13; $t2.TextWrapping = 'Wrap'; $t2.Margin = '0,2,0,0'
+            $sp.Children.Add($t1) | Out-Null; $sp.Children.Add($t2) | Out-Null; $g.Children.Add($sp) | Out-Null
+            $f.RTodo.Children.Add($g) | Out-Null
+        }
+
+        # Hulp: telefoon/mail + C-label (of serienummer als er geen C-label is)
+        $f.RHelp.Text = "Bel $($r.phone) of mail $($r.mail). Noem je C-label, dan helpen we je sneller."
+        if ([string]$r.clabel) {
+            $f.RLabel.Text = [string]$r.clabel; $f.RSerial.Text = "Serienummer $($r.serial)"
+        } else {
+            $f.RLabelKey.Text = 'Serienummer'; $f.RLabel.Text = [string]$r.serial; $f.RSerial.Visibility = 'Collapsed'
+            $f.RHelp.Text = "Bel $($r.phone) of mail $($r.mail). Noem je serienummer, dan helpen we je sneller."
+        }
+
+        $f.Header.Add_MouseLeftButtonDown({ try { $rw.DragMove() } catch {} })
+        $f.RBtnX.Add_Click({ $rw.Close() })
+        $f.RBtnClose.Add_Click({ $rw.Close() })
+        $f.RBtnTech.Add_Click({ Open-ReportInEdge })
+        $rw.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Escape') { $rw.Close() } })
+        $rw.Add_Loaded({ $f.RBtnClose.Focus() | Out-Null })
+
+        Write-PopupLog 'Opleverrapport getoond in rapportvenster.'
+        [void]$rw.ShowDialog()
+    }
+
+    function Open-Report {
+        $json = [IO.Path]::ChangeExtension($Script:ReportHtml, '.json')
+        if (Test-Path $json) {
+            try {
+                $r = [IO.File]::ReadAllText($json, [Text.Encoding]::UTF8) | ConvertFrom-Json
+                $win.Hide()
+                Show-ReportWindow $r
+                return
+            } catch {
+                Write-PopupLog "Rapportvenster mislukt, terugval op Edge: $($_.Exception.Message)" 'WARN'
+                try { $win.Show() } catch {}
+            }
+        }
+        Open-ReportInEdge
     }
 
     # --- Knoppen ---
@@ -677,6 +871,8 @@ function Start-Ui {
     Update-View
     $poll.Start(); $anim.Start()
     Write-PopupLog 'Popup getoond.'
+    if ($ReportOnly) { Open-Report; return }
+
     # Niet tonen zolang Windows Hello / ESP (CloudExperienceHost) op de voorgrond staat.
     # Gemeten vanuit de sessie van de gebruiker; achtergrondprocessen tellen niet mee. Max 20 min.
     try {
@@ -702,5 +898,5 @@ function Start-Ui {
 
 # =================================================================
 if ($Worker) { Start-Worker }
-elseif ($Ui) { Start-Ui }
-else { Write-Host 'Gebruik: Start-UpdatePopup.ps1 -Worker (als SYSTEM) of -Ui (als gebruiker).' }
+elseif ($Ui -or $ReportOnly) { Start-Ui }
+else { Write-Host 'Gebruik: Start-UpdatePopup.ps1 -Worker (als SYSTEM), -Ui of -ReportOnly (als gebruiker).' }
