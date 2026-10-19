@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.04
+    Versie: 2026.10.19.05
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -333,7 +333,7 @@ $Html = @"
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Je nieuwe computer is klaar</title>
+<title>Je computer is klaar</title>
 <style>
 :root{--ink:#26324A;--muted:#5A6475;--line:#E3E6EB;--soft:#EEF0F3;--bg:#F4F5F7}
 *{box-sizing:border-box}
@@ -395,7 +395,7 @@ td{padding:8px 12px 8px 0;border-bottom:1px solid var(--soft);vertical-align:top
 <section aria-labelledby="welcome">
 <span class="pill"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Klaar voor gebruik</span>
 <h1 id="welcome">$Greeting</h1>
-<p class="lead">Je nieuwe computer is ingericht en bijgewerkt. Hieronder zie je wat we voor je hebben gedaan en wat je nog moet doen.</p>
+<p class="lead">Je computer is ingericht en bijgewerkt. Hieronder zie je wat we voor je hebben gedaan en wat je nog moet doen.</p>
 </section>
 
 <section class="card" aria-labelledby="done-title">
@@ -473,7 +473,7 @@ function Plain([string]$s) { [System.Net.WebUtility]::HtmlDecode(($s -replace '<
 function IconKind($i) { if ($i -eq $IconOk) { 'ok' } elseif ($i -eq $IconBusy) { 'busy' } else { 'info' } }
 $Json = [ordered]@{
     greeting = Plain $Greeting
-    intro    = 'Je nieuwe computer is ingericht en bijgewerkt. Hieronder zie je wat we hebben gedaan en wat je nog moet doen.'
+    intro    = 'Je computer is ingericht en bijgewerkt. Hieronder zie je wat we hebben gedaan en wat je nog moet doen.'
     done     = @($Done | ForEach-Object { [ordered]@{ kind = (IconKind $_.Icon); title = (Plain $_.Title); detail = (Plain $_.Detail) } })
     todo     = @($Todo | ForEach-Object { [ordered]@{ title = (Plain $_.Title); detail = (Plain $_.Detail) } })
     phone    = $HelpPhone
