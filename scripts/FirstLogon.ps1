@@ -14,7 +14,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.03
+    Versie: 2026.10.19.04
 #>
 
 param(
@@ -129,7 +129,11 @@ if (Test-Path $Popup) {
 
     # Popup starten in de sessie van de gebruiker (groep Users), ook op accu
     try {
-        $Action    = New-ScheduledTaskAction -Execute $PsExe -Argument "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$Popup`" -Ui"
+        # Via conhost --headless: geen (leeg) consolevenster. Windows Terminal negeert -WindowStyle Hidden.
+        $Conhost   = "$env:WINDIR\System32\conhost.exe"
+        $PsArgs    = "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$Popup`" -Ui"
+        $Action    = if (Test-Path $Conhost) { New-ScheduledTaskAction -Execute $Conhost -Argument "--headless `"$PsExe`" $PsArgs" }
+                     else { New-ScheduledTaskAction -Execute $PsExe -Argument $PsArgs }
         $Principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
         $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
         Register-ScheduledTask -TaskName $UiTaskName -TaskPath $UiTaskPath -Action $Action -Principal $Principal -Settings $Settings -Force | Out-Null
