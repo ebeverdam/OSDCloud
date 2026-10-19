@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.05
+    Versie: 2026.10.19.06
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -659,6 +659,24 @@ function Start-Ui {
     Update-View
     $poll.Start(); $anim.Start()
     Write-PopupLog 'Popup getoond.'
+    # Niet tonen zolang Windows Hello / ESP (CloudExperienceHost) op de voorgrond staat.
+    # Gemeten vanuit de sessie van de gebruiker; achtergrondprocessen tellen niet mee. Max 20 min.
+    try {
+        Add-Type -Namespace Cx -Name Fg -MemberDefinition @'
+[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, out uint pid);
+'@
+        $cxh = 'CloudExperienceHost', 'CloudExperienceHostBroker', 'WWAHost'
+        for ($w = 0; $w -lt 400; $w++) {
+            $fgPid = [uint32]0
+            [void][Cx.Fg]::GetWindowThreadProcessId([Cx.Fg]::GetForegroundWindow(), [ref]$fgPid)
+            $fgName = (Get-Process -Id $fgPid -ErrorAction SilentlyContinue).ProcessName
+            if ($fgName -notin $cxh) { break }
+            if ($w -eq 0) { Write-PopupLog "Setup-scherm ($fgName) op de voorgrond: popup wacht." }
+            Start-Sleep -Seconds 3
+        }
+    } catch {}
+
     [void]$win.ShowDialog()
     $poll.Stop(); $anim.Stop()
     Write-PopupLog 'Popup gesloten.'
