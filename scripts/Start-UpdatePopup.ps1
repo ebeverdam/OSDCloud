@@ -255,19 +255,13 @@ function Start-Worker {
     foreach ($g in $status.groups) { if ($g.total -eq 0) { $g.state = 'none' } elseif ($g.done -ge $g.total) { $g.state = 'done' } elseif ($g.state -eq 'active') { $g.state = 'pending' } }
     if ((Test-Path $Script:CancelFlag) -and $status.installed -lt $status.total) { $status.skipped = $true }
 
-    # Eindstand (volle balk, alle vinkjes) even zichtbaar laten voordat de popup verder gaat
-    # (ook als er niets nodig was: dan staan alle vier de categorieen op groen)
-    if ($status.stage -ne 'error') {
-        $status.stage = 'finishing'
-        $status.current = ''
-        Write-Status $status
-        Start-Sleep -Seconds 4
-    }
-
     # --- Afronden: rapport klaarzetten ---
+    # Het afrondscherm toont de eindstand (alle vinkjes) terwijl het rapport gemaakt wordt;
+    # minimaal 3 seconden, zodat de vinkjes even te zien zijn.
     if ($status.stage -ne 'error') { $status.stage = 'finishing' }
     $status.current = ''
     Write-Status $status
+    $finStart = Get-Date
 
     $ok = $status.ok
     if ($status.stage -ne 'error') {
@@ -287,9 +281,10 @@ function Start-Worker {
     if (Test-Path $Script:ReportPs1) {
         try {
             & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $Script:ReportPs1 -NoOpen | Out-Null
+            Write-PopupLog ("Rapport gemaakt in {0:N1} s." -f ((Get-Date) - $finStart).TotalSeconds)
             if (Test-Path $Script:ReportHtml) {
                 New-Item -Path $Script:EdgeProfile -ItemType Directory -Force | Out-Null
-                $null = icacls.exe $Script:EdgeProfile /grant '*S-1-5-32-545:(OI)(CI)M' /T /Q
+                $null = icacls.exe $Script:EdgeProfile /grant '*S-1-5-32-545:(OI)(CI)M' /Q   # erft door; geen /T over een bestaand Edge-profiel
                 $policyAdded = Set-EdgeFirstRunPolicy $true
                 $status.reportReady = $true
                 Write-PopupLog 'Opleverrapport klaargezet.'
@@ -297,6 +292,8 @@ function Start-Worker {
         } catch { Write-PopupLog "Rapport maken mislukt: $($_.Exception.Message)" 'ERROR' }
     }
 
+    $rest = 3 - ((Get-Date) - $finStart).TotalSeconds
+    if ($rest -gt 0) { Start-Sleep -Milliseconds ([int]($rest * 1000)) }
     if ($status.stage -ne 'error') { $status.stage = 'done' }
     Write-Status $status
     Write-PopupLog "Klaar: $($status.message)"
@@ -534,7 +531,7 @@ function Start-Ui {
             'search' {
                 Set-Icon 0xE721 '#EAF0F8' '#24508A'
                 $c.TxtTitle.Text = if ($FirstName) { "Hoi $FirstName, je computer wordt bijgewerkt" } else { 'Je computer wordt bijgewerkt' }
-                $c.TxtBody.Text = T 'We kijken nog &eacute;&eacute;n keer of er updates zijn. Je kan je computer ondertussen gewoon gebruiken.'
+                $c.TxtBody.Text = T 'We kijken nog &eacute;&eacute;n keer of er updates zijn. Je kan ondertussen je computer nog gewoon gebruiken.'
                 $c.TxtCurrent.Text = T 'Zoeken naar updates&hellip;'; $c.TxtPercent.Text = ''
                 if ($s -and $s.groups) {
                     $c.DetailsBox.Visibility = 'Visible'
@@ -546,7 +543,7 @@ function Start-Ui {
                 Set-Icon 0xE896 '#EAF0F8' '#24508A'
                 $n = [Math]::Min($s.installed + 1, $s.total)
                 $c.TxtTitle.Text = 'Updates installeren'
-                $c.TxtBody.Text = "$n van $($s.total) updates. Je kan gewoon verder werken."
+                $c.TxtBody.Text = "$n van $($s.total) updates. Je kan ondertussen je computer nog gewoon gebruiken."
                 $pct = if ($s.total) { [int]([Math]::Round($s.installed / $s.total * 100)) } else { 0 }
                 $c.TxtCurrent.Text = if ($s.rescan) { T 'Controleren op extra updates&hellip;' } elseif ($s.current) { "Nu bezig: $($s.current)" } else { '' }; $c.TxtPercent.Text = "$pct%"
                 $c.Fill.Margin = (New-Object System.Windows.Thickness(0)); $c.Fill.Width = [Math]::Max(0, $c.Track.ActualWidth * $pct / 100)
@@ -741,6 +738,7 @@ function Start-Ui {
             $sp = New-Object System.Windows.Controls.StackPanel; $sp.Margin = '12,3,0,0'; [System.Windows.Controls.Grid]::SetColumn($sp, 1)
             $t1 = New-Object System.Windows.Controls.TextBlock; $t1.Text = [string]$d.title; $t1.FontWeight = 'SemiBold'; $t1.TextWrapping = 'Wrap'
             $t2 = New-Object System.Windows.Controls.TextBlock; $t2.Text = [string]$d.detail; $t2.Foreground = (B '#4A5568'); $t2.FontSize = 13; $t2.TextWrapping = 'Wrap'; $t2.Margin = '0,2,0,0'
+            if (-not [string]$d.detail) { $t2.Visibility = 'Collapsed' }
             $sp.Children.Add($t1) | Out-Null; $sp.Children.Add($t2) | Out-Null; $g.Children.Add($sp) | Out-Null
             $f.RDone.Children.Add($g) | Out-Null
         }
@@ -791,8 +789,8 @@ function Start-Ui {
             }
             $f.RTechList.Children.Add($g) | Out-Null; $first = $false
         }
-        if (-not @($r.tech).Count) { $f.RBtnTech.Content = 'Technische details'; $f.RBtnTech.Add_Click({ Open-ReportInEdge }) }
-        else {
+        if (-not @($r.tech).Count) { $f.RTechList.Visibility = 'Collapsed'; $f.RBtnHtml.Margin = '0,4,0,0' }
+        if ($true) {
             $f.RBtnTech.Add_Click({
                 if ($f.RTech.Visibility -eq 'Visible') {
                     $f.RTech.Visibility = 'Collapsed'; $f.RBtnTech.Content = 'Technische details tonen'
