@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.06
+    Versie: 2026.10.19.07
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -255,7 +255,9 @@ function Start-Worker {
     if ((Test-Path $Script:CancelFlag) -and $status.installed -lt $status.total) { $status.skipped = $true }
 
     # Eindstand (volle balk, alle vinkjes) even zichtbaar laten voordat de popup verder gaat
-    if ($status.stage -eq 'install') {
+    # (ook als er niets nodig was: dan staan alle vier de categorieen op groen)
+    if ($status.stage -ne 'error') {
+        $status.stage = 'finishing'
         $status.current = ''
         Write-Status $status
         Start-Sleep -Seconds 4
@@ -492,7 +494,8 @@ function Start-Ui {
             default   { $row.Icon.Background = (B '#FFFFFF'); $row.Icon.BorderBrush = (B '#D5DAE1'); $row.Glyph.Text = '' }
         }
         $row.Label.Foreground = (B '#26324A')
-        $row.Meta.Text = if ($total -eq 0) { 'geen nodig' }
+        $row.Meta.Text = if ($state -eq 'pending' -and $total -eq 0) { '' }   # nog aan het zoeken
+                         elseif ($total -eq 0) { 'geen nodig' }
                          elseif ($state -eq 'active') { "$done van $total" }
                          elseif ($total -eq 1) { '1 update' } else { "$total updates" }
     }
@@ -520,6 +523,10 @@ function Start-Ui {
                 $c.TxtTitle.Text = if ($FirstName) { "Hoi $FirstName, je computer wordt bijgewerkt" } else { 'Je computer wordt bijgewerkt' }
                 $c.TxtBody.Text = T 'We kijken nog &eacute;&eacute;n keer of er updates zijn. Je kunt gewoon verder werken.'
                 $c.TxtCurrent.Text = T 'Zoeken naar updates&hellip;'; $c.TxtPercent.Text = ''
+                if ($s -and $s.groups) {
+                    $c.DetailsBox.Visibility = 'Visible'
+                    foreach ($g in $s.groups) { Set-RowState $rows[$g.key] $g.state $g.done $g.total }
+                }
                 Show-Buttons 'Overslaan' $null
             }
             'install' {
@@ -546,7 +553,7 @@ function Start-Ui {
                 $c.TxtTitle.Text = 'Bijna klaar'
                 $c.TxtBody.Text = 'We ronden af en zetten je opleverrapport klaar.'
                 $c.TxtCurrent.Text = T 'Afronden&hellip;'; $c.TxtPercent.Text = ''
-                if ($s -and $s.total -gt 0) {
+                if ($s -and $s.groups) {
                     $c.DetailsBox.Visibility = 'Visible'
                     foreach ($g in $s.groups) { Set-RowState $rows[$g.key] $g.state $g.done $g.total }
                 }
