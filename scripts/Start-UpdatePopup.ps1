@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.04
+    Versie: 2026.10.19.05
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -136,50 +136,74 @@ function Start-Worker {
     Write-PopupLog '--- Worker gestart ---'
     $status = @{
         stage = 'search'; total = 0; installed = 0; failed = 0; current = ''
-        rebootRequired = $false; skipped = $false; reportReady = $false; message = ''
+        rebootRequired = $false; skipped = $false; reportReady = $false; message = ''; rescan = $false; ok = 0
         groups = @($Script:Groups | ForEach-Object { @{ key = $_.Key; label = $_.Label; total = 0; done = 0; state = 'pending' } })
     }
     Write-Status $status
 
-    # --- Zoeken ---
-    $updates = @()
-    try {
-        $session = New-Object -ComObject Microsoft.Update.Session
+    # --- Zoeken + installeren, in rondes ---
+    # Na het installeren van een basisdriver biedt Windows Update vaak nog extensies of
+    # onderdelen aan, en een eerste mislukte driver lukt bij een tweede poging meestal wel.
+    # Daarom opnieuw zoeken tot er niets nieuws meer is (max $MaxPasses rondes).
+    $MaxPasses = 3
+    $order     = @{ security = 0; defender = 1; driver = 2; other = 3 }
+    $Attempts  = @{}   # UpdateID -> aantal pogingen
+    $Final     = @{}   # UpdateID -> $true (gelukt) / $false (mislukt)
+    $session   = $null; $searcher = $null
+
+    for ($pass = 1; $pass -le $MaxPasses; $pass++) {
+        if (Test-Path $Script:CancelFlag) { break }
+
+        # Zoeken
+        $updates = @()
         try {
-            $svc = New-Object -ComObject Microsoft.Update.ServiceManager
-            $svc.AddService2('7971f918-a847-4430-9279-4a52d1efe18d', 7, '') | Out-Null
-        } catch {}
-        $searcher = $session.CreateUpdateSearcher()
-        try { $searcher.ServiceID = '7971f918-a847-4430-9279-4a52d1efe18d'; $searcher.ServerSelection = 3 } catch {}
-        Write-PopupLog 'Zoeken naar updates...'
-        $result = $searcher.Search('IsInstalled=0 and IsHidden=0 and BrowseOnly=0')
-        for ($i = 0; $i -lt $result.Updates.Count; $i++) { $updates += $result.Updates.Item($i) }
-        Write-PopupLog "$($updates.Count) update(s) gevonden."
-    }
-    catch {
-        Write-PopupLog "Zoeken mislukt: $($_.Exception.Message)" 'ERROR'
-        $status.stage = 'error'
-        $status.message = T 'Er kon niet naar updates worden gezocht. Windows probeert het later vanzelf opnieuw.'
-    }
+            if (-not $session) {
+                $session = New-Object -ComObject Microsoft.Update.Session
+                try {
+                    $svc = New-Object -ComObject Microsoft.Update.ServiceManager
+                    $svc.AddService2('7971f918-a847-4430-9279-4a52d1efe18d', 7, '') | Out-Null
+                } catch {}
+            }
+            $searcher = $session.CreateUpdateSearcher()
+            try { $searcher.ServiceID = '7971f918-a847-4430-9279-4a52d1efe18d'; $searcher.ServerSelection = 3 } catch {}
+            if ($pass -gt 1) { $status.rescan = $true; $status.current = ''; Write-Status $status }
+            Write-PopupLog "Ronde ${pass}: zoeken naar updates..."
+            $result = $searcher.Search('IsInstalled=0 and IsHidden=0 and BrowseOnly=0')
+            for ($i = 0; $i -lt $result.Updates.Count; $i++) { $updates += $result.Updates.Item($i) }
+            Write-PopupLog "Ronde ${pass}: $($updates.Count) update(s) gevonden."
+        }
+        catch {
+            Write-PopupLog "Zoeken mislukt (ronde $pass): $($_.Exception.Message)" 'ERROR'
+            if ($pass -eq 1) {
+                $status.stage = 'error'
+                $status.message = T 'Er kon niet naar updates worden gezocht. Windows probeert het later vanzelf opnieuw.'
+            }
+            break
+        }
+        $status.rescan = $false
 
-    # --- Indelen en sorteren ---
-    $order = @{ security = 0; defender = 1; driver = 2; other = 3 }
-    $plan = @($updates | ForEach-Object {
-        $g = Get-UpdateGroup $_
-        # Binnen Defender: platform voor definities
-        $sub = if ($g -eq 'defender' -and $_.Title -match 'beveiligingsinformatie|Security Intelligence|KB2267602') { 1 } else { 0 }
-        [pscustomobject]@{ Update = $_; Group = $g; Order = $order[$g]; Sub = $sub; Name = (Get-FriendlyName $_ $g) }
-    } | Sort-Object Order, Sub)
+        # Alleen nieuwe updates, of eerder mislukte voor een tweede poging
+        $updates = @($updates | Where-Object { -not $Attempts.ContainsKey($_.Identity.UpdateID) -or ($Final[$_.Identity.UpdateID] -eq $false -and $Attempts[$_.Identity.UpdateID] -lt 2) })
+        if ($updates.Count -eq 0) { Write-PopupLog "Ronde ${pass}: niets nieuws, klaar."; break }
 
-    foreach ($grp in $status.groups) {
-        $k = $grp.key; $grp.total = @($plan | Where-Object { $_.Group -eq $k }).Count
-        if ($grp.total -eq 0) { $grp.state = 'none' }   # niets nodig = in orde (groen vinkje)
-    }
-    $status.total = $plan.Count
-    foreach ($p in $plan) { Write-PopupLog (" - [{0}] {1}" -f $p.Group, $p.Update.Title) }
+        # Indelen en sorteren
+        $plan = @($updates | ForEach-Object {
+            $g = Get-UpdateGroup $_
+            # Binnen Defender: platform voor definities
+            $sub = if ($g -eq 'defender' -and $_.Title -match 'beveiligingsinformatie|Security Intelligence|KB2267602') { 1 } else { 0 }
+            [pscustomobject]@{ Update = $_; Group = $g; Order = $order[$g]; Sub = $sub; Name = (Get-FriendlyName $_ $g) }
+        } | Sort-Object Order, Sub)
 
-    # --- Installeren ---
-    if ($status.stage -ne 'error' -and $plan.Count -gt 0 -and -not (Test-Path $Script:CancelFlag)) {
+        foreach ($grp in $status.groups) {
+            $k = $grp.key; $extra = @($plan | Where-Object { $_.Group -eq $k }).Count
+            $grp.total += $extra
+            if ($grp.total -eq 0) { $grp.state = 'none' }          # niets nodig = in orde (groen vinkje)
+            elseif ($extra -gt 0) { $grp.state = 'pending' }
+        }
+        $status.total += $plan.Count
+        foreach ($p in $plan) { Write-PopupLog (" - [{0}] {1}" -f $p.Group, $p.Update.Title) }
+
+        # Installeren
         $status.stage = 'install'
         foreach ($p in $plan) {
             if (Test-Path $Script:CancelFlag) { $status.skipped = $true; Write-PopupLog 'Afgebroken door gebruiker.'; break }
@@ -190,8 +214,10 @@ function Start-Worker {
             $status.current = $p.Name
             Write-Status $status
 
+            $u  = $p.Update
+            $id = $u.Identity.UpdateID
+            $Attempts[$id] = 1 + [int]$Attempts[$id]
             try {
-                $u = $p.Update
                 if (-not $u.EulaAccepted) { $u.AcceptEula() }
                 $coll = New-Object -ComObject Microsoft.Update.UpdateColl
                 $coll.Add($u) | Out-Null
@@ -201,16 +227,17 @@ function Start-Worker {
                 $inst = $session.CreateUpdateInstaller(); $inst.Updates = $coll
                 $res = $inst.Install()
                 if ($res.ResultCode -in 2, 3) {
+                    $Final[$id] = $true
                     Write-PopupLog "OK: $($u.Title)"
                     if ($res.RebootRequired) { $status.rebootRequired = $true }
                 } else {
-                    $status.failed++
-                    Write-PopupLog "MISLUKT ($($res.ResultCode)): $($u.Title)" 'ERROR'
+                    $Final[$id] = $false
+                    Write-PopupLog "MISLUKT ($($res.ResultCode)), poging $($Attempts[$id]): $($u.Title)" 'WARN'
                 }
             }
             catch {
-                $status.failed++
-                Write-PopupLog "MISLUKT: $($p.Update.Title) - $($_.Exception.Message)" 'ERROR'
+                $Final[$id] = $false
+                Write-PopupLog "MISLUKT, poging $($Attempts[$id]): $($u.Title) - $($_.Exception.Message)" 'WARN'
             }
 
             $status.installed++
@@ -218,7 +245,12 @@ function Start-Worker {
             if ($grp.done -ge $grp.total) { $grp.state = 'done' }
             Write-Status $status
         }
+        if ($status.skipped) { break }
     }
+
+    # Telling: een update die bij de tweede poging lukte telt als gelukt
+    $status.failed = @($Final.Values | Where-Object { $_ -eq $false }).Count
+    $status.ok     = @($Final.Values | Where-Object { $_ -eq $true }).Count
     foreach ($g in $status.groups) { if ($g.total -eq 0) { $g.state = 'none' } elseif ($g.done -ge $g.total) { $g.state = 'done' } elseif ($g.state -eq 'active') { $g.state = 'pending' } }
     if ((Test-Path $Script:CancelFlag) -and $status.installed -lt $status.total) { $status.skipped = $true }
 
@@ -234,7 +266,7 @@ function Start-Worker {
     $status.current = ''
     Write-Status $status
 
-    $ok = $status.installed - $status.failed
+    $ok = $status.ok
     if ($status.stage -ne 'error') {
         if ($status.total -eq 0) {
             $status.message = T 'Je computer is helemaal bijgewerkt. Er waren geen extra updates nodig.'
@@ -285,6 +317,17 @@ function Start-Worker {
 # =================================================================
 function Start-Ui {
     Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
+
+    # Voornaam voor een persoonlijke aanhef ("Elco Kuipers | Videra B.V." -> "Elco").
+    # Geen naam bekend, of alleen de accountnaam (lokaal account zonder volledige naam)? Dan zonder naam.
+    $FirstName = ''
+    try {
+        $lui = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI' -ErrorAction Stop
+        if ($lui.LastLoggedOnDisplayName -and ([string]$lui.LastLoggedOnSAMUser -split '\\')[-1] -eq $env:USERNAME) {
+            $fn = (([string]$lui.LastLoggedOnDisplayName -split '\|')[0].Trim() -split '\s+')[0]
+            if ($fn -and $fn -ne $env:USERNAME -and $fn.Length -le 20) { $FirstName = $fn }
+        }
+    } catch {}
 
     [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -474,7 +517,7 @@ function Start-Ui {
         switch ($stage) {
             'search' {
                 Set-Icon 0xE721 '#EAF0F8' '#24508A'
-                $c.TxtTitle.Text = 'Je computer wordt bijgewerkt'
+                $c.TxtTitle.Text = if ($FirstName) { "Hoi $FirstName, je computer wordt bijgewerkt" } else { 'Je computer wordt bijgewerkt' }
                 $c.TxtBody.Text = T 'We kijken nog &eacute;&eacute;n keer of er updates zijn. Je kunt gewoon verder werken.'
                 $c.TxtCurrent.Text = T 'Zoeken naar updates&hellip;'; $c.TxtPercent.Text = ''
                 Show-Buttons 'Overslaan' $null
@@ -485,7 +528,7 @@ function Start-Ui {
                 $c.TxtTitle.Text = 'Updates installeren'
                 $c.TxtBody.Text = "$n van $($s.total) updates. Je kunt gewoon verder werken."
                 $pct = if ($s.total) { [int]([Math]::Round($s.installed / $s.total * 100)) } else { 0 }
-                $c.TxtCurrent.Text = if ($s.current) { "Nu bezig: $($s.current)" } else { '' }; $c.TxtPercent.Text = "$pct%"
+                $c.TxtCurrent.Text = if ($s.rescan) { T 'Controleren op extra updates&hellip;' } elseif ($s.current) { "Nu bezig: $($s.current)" } else { '' }; $c.TxtPercent.Text = "$pct%"
                 $c.Fill.Margin = (New-Object System.Windows.Thickness(0)); $c.Fill.Width = [Math]::Max(0, $c.Track.ActualWidth * $pct / 100)
                 $c.DetailsBox.Visibility = 'Visible'
                 foreach ($g in $s.groups) { Set-RowState $rows[$g.key] $g.state $g.done $g.total }
@@ -511,7 +554,7 @@ function Start-Ui {
             }
             { $_ -in 'done', 'error' } {
                 if ($stage -eq 'error') { Set-Icon 0xE7BA '#FBF0DE' '#7F4A00'; $c.TxtTitle.Text = 'Updates later' }
-                else { Set-Icon 0xE73E '#E6F3EB' '#17643B'; $c.TxtTitle.Text = 'Je computer is klaar' }
+                else { Set-Icon 0xE73E '#E6F3EB' '#17643B'; $c.TxtTitle.Text = if ($FirstName) { "Je computer is klaar, $FirstName" } else { 'Je computer is klaar' } }
                 $c.TxtBody.Text = [string]$s.message
                 $c.ProgressArea.Visibility = 'Collapsed'
                 $ui.allowClose = $true
