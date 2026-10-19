@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     -Register   Maakt de geplande taak aan (vanuit SetupComplete, of door Test-FirstLogonFlow.ps1).
-                De taak start direct bij elke aanmelding (ook op accu). Updates starten meteen; de popup wacht tot Windows Hello/ESP klaar is.
+                De taak start direct bij elke aanmelding (ook op accu). Updates starten meteen; de popup zelf wacht als Windows Hello/ESP op de voorgrond staat.
     (geen)      Wordt door de taak gestart als SYSTEM:
                 1. Wacht tot OOBE klaar is en een echte gebruiker een bureaublad heeft (max 30 min).
                 2. Start de popup in de sessie van de gebruiker (Start-UpdatePopup.ps1 -Ui).
@@ -14,7 +14,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.05
+    Versie: 2026.10.19.06
 #>
 
 param(
@@ -131,16 +131,6 @@ if (Test-Path $Popup) {
     $Worker = Start-Process -FilePath $PsExe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Popup`" -Worker" -WindowStyle Hidden -PassThru
     $null = $Worker.Handle   # nodig om straks de exitcode te kunnen lezen
     Log "Worker gestart op de achtergrond (PID $($Worker.Id))."
-
-    # Popup pas tonen als Windows Hello / ESP (CloudExperienceHost) klaar is,
-    # anders verschijnt hij achter of tijdens de Hello-setup. Max 20 minuten wachten.
-    $CxhNames = 'CloudExperienceHostBroker', 'CloudExperienceHost', 'WWAHost'
-    $Waited = 0
-    while ((Get-Process -Name $CxhNames -ErrorAction SilentlyContinue) -and $Waited -lt 1200 -and -not $Worker.HasExited) {
-        if ($Waited -eq 0) { Log 'Windows Hello / account-setup is nog bezig: popup wacht.' }
-        Start-Sleep -Seconds 3; $Waited += 3
-    }
-    if ($Waited -gt 0) { Log "Setup-scherm weg na $Waited s."; Start-Sleep -Seconds 3 }
 
     # Popup starten in de sessie van de gebruiker (groep Users), ook op accu
     if (-not $Worker.HasExited) { try {
