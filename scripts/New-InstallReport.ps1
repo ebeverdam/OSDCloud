@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.07
+    Versie: 2026.10.19.08
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -135,12 +135,11 @@ $BlProtector = Get-Safe { ($Bl.KeyProtector | ForEach-Object { [string]$_.KeyPro
 $BlPolicy    = Get-Safe { (Get-Item 'HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device\BitLocker' -ErrorAction Stop).Property.Count -gt 0 } $false
 
 if ($BlStatus -eq 'FullyEncrypted' -and $BlProtect -eq 'On') { $EncState = 'ok' }
-elseif ($BlStatus -in @('EncryptionInProgress', 'FullyEncrypted')) { $EncState = 'busy' }   # bezig of wacht op activering
-elseif ($Intune) { $EncState = 'later' }
-else { $EncState = 'off' }
+elseif ($BlStatus -eq 'EncryptionInProgress' -or $BlPolicy) { $EncState = 'busy' }   # echt bezig, of beleid is binnen
+else { $EncState = 'off' }   # geen beleid en niet actief (ook: versleuteld maar wacht op activering)
 
 # --- Drivers ---
-$PnP          = Get-Safe { @(Get-CimInstance Win32_PnPEntity) } @()
+$PnP          = Get-Safe { @(Get-CimInstance Win32_PnPEntity -Filter 'ConfigManagerErrorCode <> 0') } @()   # alleen apparaten met een probleem (sneller)
 $ProblemDevs  = @($PnP | Where-Object { $_.ConfigManagerErrorCode -and $_.ConfigManagerErrorCode -ne 22 })
 $MissingDrv   = @($ProblemDevs | Where-Object { $_.ConfigManagerErrorCode -eq 28 }).Count
 
@@ -235,8 +234,7 @@ if ($ProblemDevs.Count -eq 0) {
 switch ($EncState) {
     'ok'    { $Done += @{ Icon = $IconOk;   Title = 'Je gegevens zijn versleuteld'; Detail = 'Als je computer kwijtraakt, kan niemand bij je bestanden.' } }
     'busy'  { $Done += @{ Icon = $IconBusy; Title = 'Versleuteling wordt ingesteld'; Detail = 'Dit gebeurt automatisch op de achtergrond. Je hoeft niets te doen.' } }
-    'later' { $Done += @{ Icon = $IconBusy; Title = 'Versleuteling wordt automatisch ingesteld'; Detail = 'Dit gebeurt op de achtergrond zodra het beleid van je organisatie binnen is.' } }
-    'off'   { $Done += @{ Icon = $IconInfo; Title = 'Versleuteling staat niet aan'; Detail = 'Op deze computer is versleuteling (BitLocker) niet ingeschakeld.' } }
+    'off'   { $Done += @{ Icon = $IconInfo; Title = 'Versleuteling is niet ingesteld of nog niet actief'; Detail = '' } }
 }
 
 $Todo = @()
