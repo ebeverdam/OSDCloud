@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     -Register   Maakt de geplande taak aan (vanuit SetupComplete, of door Test-FirstLogonFlow.ps1).
-                De taak start direct bij elke aanmelding (ook op accu) en wacht zelf tot het bureaublad er is.
+                De taak start direct bij elke aanmelding (ook op accu). Updates starten meteen; de popup wacht tot Windows Hello/ESP klaar is.
     (geen)      Wordt door de taak gestart als SYSTEM:
                 1. Wacht tot OOBE klaar is en een echte gebruiker een bureaublad heeft (max 30 min).
                 2. Start de popup in de sessie van de gebruiker (Start-UpdatePopup.ps1 -Ui).
@@ -14,7 +14,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.04
+    Versie: 2026.10.19.05
 #>
 
 param(
@@ -127,8 +127,23 @@ if (Test-Path $Popup) {
     New-Item -Path $PopupDir -ItemType Directory -Force | Out-Null
     $null = icacls.exe $PopupDir /grant '*S-1-5-32-545:(OI)(CI)M' /Q
 
+    # Updates direct starten als SYSTEM (achtergrond), zodat er geen tijd verloren gaat
+    $Worker = Start-Process -FilePath $PsExe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Popup`" -Worker" -WindowStyle Hidden -PassThru
+    $null = $Worker.Handle   # nodig om straks de exitcode te kunnen lezen
+    Log "Worker gestart op de achtergrond (PID $($Worker.Id))."
+
+    # Popup pas tonen als Windows Hello / ESP (CloudExperienceHost) klaar is,
+    # anders verschijnt hij achter of tijdens de Hello-setup. Max 20 minuten wachten.
+    $CxhNames = 'CloudExperienceHostBroker', 'CloudExperienceHost', 'WWAHost'
+    $Waited = 0
+    while ((Get-Process -Name $CxhNames -ErrorAction SilentlyContinue) -and $Waited -lt 1200 -and -not $Worker.HasExited) {
+        if ($Waited -eq 0) { Log 'Windows Hello / account-setup is nog bezig: popup wacht.' }
+        Start-Sleep -Seconds 3; $Waited += 3
+    }
+    if ($Waited -gt 0) { Log "Setup-scherm weg na $Waited s."; Start-Sleep -Seconds 3 }
+
     # Popup starten in de sessie van de gebruiker (groep Users), ook op accu
-    try {
+    if (-not $Worker.HasExited) { try {
         # Via conhost --headless: geen (leeg) consolevenster. Windows Terminal negeert -WindowStyle Hidden.
         $Conhost   = "$env:WINDIR\System32\conhost.exe"
         $PsArgs    = "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$Popup`" -Ui"
@@ -140,11 +155,12 @@ if (Test-Path $Popup) {
         Start-ScheduledTask -TaskName $UiTaskName -TaskPath $UiTaskPath
         Log 'Popup gestart in de sessie van de gebruiker.'
     }
-    catch { Log "Popup starten mislukt: $($_.Exception.Message) - updates gaan wel door." }
+    catch { Log "Popup starten mislukt: $($_.Exception.Message) - updates gaan wel door." } }
+    else { Log 'Worker was al klaar voordat het setup-scherm weg was: geen popup nodig.' }
 
-    # Updates uitvoeren als SYSTEM (wacht tot klaar)
-    & $PsExe -NoProfile -ExecutionPolicy Bypass -File $Popup -Worker
-    Log "Worker klaar (exitcode $LASTEXITCODE)."
+    # Wachten tot de updates klaar zijn
+    $Worker.WaitForExit()
+    Log "Worker klaar (exitcode $($Worker.ExitCode))."
 
     Unregister-ScheduledTask -TaskName $UiTaskName -TaskPath $UiTaskPath -Confirm:$false -ErrorAction SilentlyContinue
 }
