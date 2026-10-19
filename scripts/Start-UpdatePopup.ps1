@@ -40,7 +40,7 @@ $Script:LogoPath   = Join-Path $Script:ScriptDir 'Connectium.png'
 $Script:ReportPs1  = Join-Path $Script:ScriptDir 'New-InstallReport.ps1'
 $Script:ReportHtml = 'C:\ProgramData\Connectium\Installatierapport.html'
 $Script:EdgeProfile = 'C:\ProgramData\Connectium\RapportBrowser'
-$Script:HelpPhone  = '0548 722 045'
+$Script:HelpPhone  = '+31 (0)548-722045'
 
 function T([string]$s) { [System.Net.WebUtility]::HtmlDecode($s) }
 
