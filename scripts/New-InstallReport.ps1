@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.01
+    Versie: 2026.10.19.03
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -96,8 +96,18 @@ $Intune = Get-Safe {
 } $false
 
 $Autopilot        = Get-Safe { Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Provisioning\Diagnostics\AutoPilot' -ErrorAction Stop }
-$AutopilotProfile = Get-Safe { $Autopilot.DeploymentProfileName } ''
-$AutopilotTenant  = Get-Safe { $Autopilot.CloudAssignedTenantDomain } ''
+$AutopilotProfile = Get-Safe { [string]$Autopilot.DeploymentProfileName } ''
+$AutopilotTenant  = Get-Safe { [string]$Autopilot.CloudAssignedTenantDomain } ''
+# Nieuwere builds vullen DeploymentProfileName niet altijd; dan uit de policy-cache halen
+if (-not $AutopilotProfile) {
+    $AutopilotProfile = Get-Safe {
+        $cache = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Provisioning\AutopilotPolicyCache' -ErrorAction Stop
+        $json  = $cache.PolicyJsonCache | ConvertFrom-Json
+        if ($json.DeploymentProfileName) { [string]$json.DeploymentProfileName }
+        elseif (-not $AutopilotTenant -and $json.CloudAssignedTenantDomain) { $script:AutopilotTenant = [string]$json.CloudAssignedTenantDomain; '' }
+        else { '' }
+    } ''
+}
 
 # --- Activering ---
 $License = Get-Safe {
@@ -139,7 +149,9 @@ $Disk    = Get-Safe { Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'" 
 $DiskTot = Get-Safe { [math]::Round($Disk.Size / 1GB) } 0
 $DiskFre = Get-Safe { [math]::Round($Disk.FreeSpace / 1GB) } 0
 # Alle actieve adapters met hardware (ook virtuele Hyper-V-kaart), zonder VPN/loopback/virtuele switches
-$NetUp   = Get-Safe { @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.HardwareInterface }) } @()
+# @() buiten Get-Safe: een functie pakt een array met 1 element uit, en .Count op een
+# losse CimInstance is in PowerShell 5.1 leeg -> gaf ten onrechte "Geen actieve verbinding".
+$NetUp   = @(Get-Safe { Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' -and -not $_.Virtual } } | Where-Object { $_ })
 $NetText = if ($NetUp.Count) {
     ($NetUp | ForEach-Object {
         $type = if ($_.NdisPhysicalMedium -eq 9) { 'WiFi' } else { 'Kabel' }
@@ -174,7 +186,17 @@ try {
         }
     }
 } catch { Write-Warning "Windows Update-historie niet beschikbaar: $($_.Exception.Message)" }
-$Updates   = @($Updates | Sort-Object Date)
+# Per update maar een regel: drivers mislukken vaak bij de eerste poging (basisdriver nog niet
+# aanwezig) en lukken daarna wel. Alleen de eindstand tonen.
+# Store-apps (titel "9NBLGGH3FRZM-Microsoft.VCLibs...") krijgen een leesbare naam.
+$Updates = @($Updates | Group-Object Title | ForEach-Object {
+    $tries = @($_.Group | Sort-Object Date)
+    $last  = $tries[-1]
+    $okAny = [bool]($tries | Where-Object Ok)
+    $title = $last.Title -replace '^[0-9A-Z]{12}-', '' -replace '^Microsoft\.', 'Microsoft '
+    $res   = if ($okAny) { 'Ge&iuml;nstalleerd' } else { $last.Result }
+    [pscustomobject]@{ Date = $last.Date; Title = $title; KB = $last.KB; Ok = $okAny; Result = $res }
+} | Sort-Object Date)
 $UpdatesOk = @($Updates | Where-Object Ok).Count
 
 # === Teksten voor de gebruiker ===================================
@@ -265,7 +287,7 @@ function YesNo([bool]$b) { if ($b) { 'Aan' } else { 'Uit' } }
 $Tech1 = @(
     Row 'Klant'             (Enc $(if ($Customer) { $Customer } else { '-' }))
     Row 'C-label / naam'    (Enc "$(if ($DeployCLabel) { $DeployCLabel } else { 'niet ingevuld' }) / $ComputerName")
-    Row 'Fabrikant / model' (Enc "$Manufacturer $Model")
+    Row 'Fabrikant / model' (Enc $(if ($Model -like "$Manufacturer *") { $Model } else { "$Manufacturer $Model" }))
     Row 'Serienummer'       (Enc $Serial)
     Row 'BIOS'              (Enc "$BiosVersion $BiosDate")
     Row 'Processor'         (Enc $cpu)
@@ -280,7 +302,7 @@ $Tech2 = @(
     Row 'Aangemelde gebruiker' (Enc $(if ($UserName -and $DisplayName) { "$UserName ($DisplayName)" } elseif ($UserName) { $UserName } else { '-' }))
     Row 'Entra ID / domein'    (Enc "AzureAdJoined: $(if ($AadJoined) {'Ja'} else {'Nee'}) - DomainJoined: $(if ($DomainJoined) {'Ja'} else {'Nee'}) - $OrgName")
     Row 'Intune-inschrijving'  $(if ($Intune) { 'Ja' } else { 'Nee' })
-    Row 'Autopilot-profiel'    (Enc $(if ($AutopilotProfile) { "$AutopilotProfile ($AutopilotTenant)" } else { '-' }))
+    Row 'Autopilot-profiel'    (Enc $(if ($AutopilotProfile) { "$AutopilotProfile ($AutopilotTenant)" } elseif ($AutopilotTenant) { "Ja, naam onbekend ($AutopilotTenant)" } else { '-' }))
     Row 'Defender'             (Enc "$(YesNo $AvOk) - definities $AvSig - firewall $(YesNo $FwOk)")
     Row 'BitLocker C:'         (Enc "$BlStatus - beveiliging $BlProtect - $BlPercent% - $BlProtector")
     Row 'BitLocker-beleid'     $(if ($BlPolicy) { 'Aanwezig' } else { 'Nog niet ontvangen' })
