@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.03
+    Versie: 2026.10.19.04
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -467,6 +467,23 @@ $DevHtml
 # UTF-8 zonder problemen in elke browser
 [IO.File]::WriteAllText($OutFile, $Html, (New-Object System.Text.UTF8Encoding($true)))
 Write-Host "Rapport geschreven: $OutFile"
+
+# Zelfde inhoud als JSON voor het rapportvenster in de popup (Start-UpdatePopup.ps1)
+function Plain([string]$s) { [System.Net.WebUtility]::HtmlDecode(($s -replace '<[^>]+>', '')) }
+function IconKind($i) { if ($i -eq $IconOk) { 'ok' } elseif ($i -eq $IconBusy) { 'busy' } else { 'info' } }
+$Json = [ordered]@{
+    greeting = Plain $Greeting
+    intro    = 'Je nieuwe computer is ingericht en bijgewerkt. Hieronder zie je wat we hebben gedaan en wat je nog moet doen.'
+    done     = @($Done | ForEach-Object { [ordered]@{ kind = (IconKind $_.Icon); title = (Plain $_.Title); detail = (Plain $_.Detail) } })
+    todo     = @($Todo | ForEach-Object { [ordered]@{ title = (Plain $_.Title); detail = (Plain $_.Detail) } })
+    phone    = $HelpPhone
+    mail     = $HelpMail
+    clabel   = $DeployCLabel
+    serial   = $Serial
+    html     = $OutFile
+}
+$JsonFile = [IO.Path]::ChangeExtension($OutFile, '.json')
+[IO.File]::WriteAllText($JsonFile, ($Json | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 
 # === Openen in Edge voor de aangemelde gebruiker ==================
 function Open-ReportForUser([string]$Path) {
