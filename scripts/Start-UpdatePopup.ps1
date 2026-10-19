@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.11
+    Versie: 2026.10.19.13
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -606,7 +606,7 @@ function Start-Ui {
         [xml]$rx = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Je nieuwe computer is klaar" Width="680" SizeToContent="Height"
+        Title="Je computer is klaar" Width="680" SizeToContent="Height"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen" ShowInTaskbar="True"
         FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="14" Foreground="#26324A">
@@ -663,23 +663,23 @@ function Start-Ui {
         <Border Grid.Row="1" Height="1" Background="#EEF0F3"/>
 
         <ScrollViewer x:Name="RScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="32,24,32,8">
+          <StackPanel Margin="32,18,32,4">
             <Border HorizontalAlignment="Left" Background="#E6F3EB" CornerRadius="12" Padding="10,3">
               <StackPanel Orientation="Horizontal">
                 <TextBlock Text="&#xE73E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="11" Foreground="#17643B" VerticalAlignment="Center"/>
                 <TextBlock Text="Klaar voor gebruik" Margin="6,0,0,0" FontSize="13" FontWeight="SemiBold" Foreground="#17643B"/>
               </StackPanel>
             </Border>
-            <TextBlock x:Name="RGreeting" Margin="0,12,0,0" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock x:Name="RGreeting" Margin="0,10,0,0" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="26" FontWeight="SemiBold" TextWrapping="Wrap"/>
             <TextBlock x:Name="RIntro" Margin="0,6,0,0" Foreground="#4A5568" TextWrapping="Wrap"/>
 
-            <TextBlock Text="Wat we hebben gedaan" Margin="0,24,0,8" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock Text="Wat we hebben gedaan" Margin="0,18,0,4" FontSize="16" FontWeight="SemiBold"/>
             <StackPanel x:Name="RDone"/>
 
-            <TextBlock Text="Wat je nog moet doen" Margin="0,20,0,8" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock Text="Wat je nog moet doen" Margin="0,14,0,4" FontSize="16" FontWeight="SemiBold"/>
             <StackPanel x:Name="RTodo"/>
 
-            <Border Margin="0,20,0,16" Background="#26324A" CornerRadius="10" Padding="20,16">
+            <Border Margin="0,14,0,8" Background="#26324A" CornerRadius="10" Padding="20,14">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel>
@@ -696,7 +696,7 @@ function Start-Ui {
           </StackPanel>
         </ScrollViewer>
 
-        <Grid Grid.Row="3" Margin="32,8,24,20">
+        <Grid Grid.Row="3" Margin="32,8,24,16">
           <Button x:Name="RBtnTech" Style="{StaticResource BtnLink}" Content="Technische details" HorizontalAlignment="Left" VerticalAlignment="Center"/>
           <Button x:Name="RBtnClose" Style="{StaticResource BtnPri}" Content="Sluiten" HorizontalAlignment="Right"/>
         </Grid>
@@ -712,14 +712,14 @@ function Start-Ui {
         if ($bmp) { $f.RLogo.Source = $bmp } else { $f.RLogo.Visibility = 'Collapsed'; $f.RLogoText.Visibility = 'Visible' }
         if ($win.Icon) { $rw.Icon = $win.Icon }
         $rw.MaxHeight = [System.Windows.SystemParameters]::WorkArea.Height - 24
-        $f.RScroll.MaxHeight = $rw.MaxHeight - 170
+        $f.RScroll.MaxHeight = $rw.MaxHeight - 150
 
         $f.RGreeting.Text = [string]$r.greeting
         $f.RIntro.Text    = [string]$r.intro
 
         # Wat we hebben gedaan: rondje met vinkje / klok / i + titel + toelichting
         foreach ($d in @($r.done)) {
-            $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,6,0,6'
+            $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,4,0,4'
             $c0 = New-Object System.Windows.Controls.ColumnDefinition; $c0.Width = 'Auto'; $g.ColumnDefinitions.Add($c0)
             $g.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
             $ic = New-Object System.Windows.Controls.Border; $ic.Width = 28; $ic.Height = 28; $ic.CornerRadius = 14; $ic.VerticalAlignment = 'Top'
@@ -742,7 +742,7 @@ function Start-Ui {
         $i = 0
         foreach ($t in @($r.todo)) {
             $i++
-            $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,6,0,6'
+            $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,4,0,4'
             $c0 = New-Object System.Windows.Controls.ColumnDefinition; $c0.Width = 'Auto'; $g.ColumnDefinitions.Add($c0)
             $g.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
             $nb = New-Object System.Windows.Controls.Border; $nb.Width = 28; $nb.Height = 28; $nb.CornerRadius = 14; $nb.VerticalAlignment = 'Top'
