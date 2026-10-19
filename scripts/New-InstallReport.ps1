@@ -13,7 +13,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.06
+    Versie: 2026.10.19.07
     Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
 #>
 
@@ -250,7 +250,7 @@ if (-not $IsLocalUser) {
     $Todo += @{ Title = 'Controleer of je bestanden en mail er zijn'; Detail = 'Open Outlook en OneDrive. Mist er iets? Neem contact met ons op.' }
 }
 if ($Todo.Count -eq 0) {
-    $Todo += @{ Title = 'Je kunt direct aan de slag'; Detail = 'Er hoeft niets meer te gebeuren.' }
+    $Todo += @{ Title = 'Je kan direct aan de slag'; Detail = 'Er hoeft niets meer te gebeuren.' }
 }
 
 # === HTML opbouwen ===============================================
@@ -270,16 +270,13 @@ $TodoHtml = ($Todo | ForEach-Object {
     "<li class=`"todo`"><span class=`"num`">$i</span><div><strong>$($_.Title)</strong><span>$($_.Detail)</span></div></li>"
 }) -join "`n"
 
-if ($DeployCLabel) {
-    $LabelHtml = "<div><dt>C-label</dt><dd class=`"mono big`">$(Enc $DeployCLabel)</dd></div>"
-    if ($ComputerName -ne $DeployCLabel) {
-        $LabelHtml += "<div><dt>Computernaam</dt><dd class=`"mono`">$(Enc $ComputerName)</dd></div>"
-    }
-} elseif ($ComputerName -match $LabelPattern) {
-    $LabelHtml = "<div><dt>C-label</dt><dd class=`"mono big`">$(Enc $ComputerName)</dd></div>"
-} else {
-    $LabelHtml = "<div><dt>C-label</dt><dd>Zie de sticker op je computer</dd></div><div><dt>Computernaam</dt><dd class=`"mono`">$(Enc $ComputerName)</dd></div>"
-}
+# Hulpblok: C-label (uit WinPE, of de computernaam als die er een is), anders het serienummer
+$HelpLabel = if ($DeployCLabel) { $DeployCLabel } elseif ($ComputerName -match $LabelPattern) { $ComputerName } else { '' }
+$HelpAsk   = if ($HelpLabel) { 'Noem je C-label, dan helpen we je sneller.' } else { 'Noem je serienummer, dan helpen we je sneller.' }
+$HelpRight = if ($HelpLabel) { "<span class=`"k`">C-label</span><span class=`"v`">$(Enc $HelpLabel)</span><span class=`"s`">Serienummer $(Enc $Serial)</span>" }
+             else { "<span class=`"k`">Serienummer</span><span class=`"v`">$(Enc $Serial)</span>" }
+$PhoneHref = Enc (($HelpPhone -replace '\(0\)', '') -replace '[^\d+]', '')
+$Intro     = 'Je computer is ingericht en bijgewerkt. Hieronder zie je wat we hebben gedaan en wat je nog moet doen.'
 
 $TechPairs = New-Object System.Collections.ArrayList   # ook naar JSON voor het rapportvenster
 function Row([string]$k, [string]$v) {
@@ -339,112 +336,96 @@ $Html = @"
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Je computer is klaar</title>
 <style>
-:root{--ink:#26324A;--muted:#5A6475;--line:#E3E6EB;--soft:#EEF0F3;--bg:#F4F5F7}
+:root{--ink:#26324A;--muted:#4A5568;--soft:#5A6475;--line:#DDE1E7;--hair:#EEF0F3;--bg:#F4F5F7}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:16px;line-height:1.55}
-.wrap{max-width:980px;margin:0 auto;padding:0 24px}
-header{background:#fff;border-bottom:1px solid var(--line)}
-header .wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-top:16px;padding-bottom:16px}
-.logo{height:40px;width:auto;display:block}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:15px;line-height:1.45}
+.card{max-width:720px;margin:32px auto;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 6px 24px rgba(16,24,40,.12);overflow:hidden}
+.top{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--hair)}
+.logo{height:22px;width:auto;display:block}
 .wordmark{font-weight:600;letter-spacing:.18em}
-.muted{color:var(--muted);font-size:14px}
-main{display:flex;flex-direction:column;gap:28px;padding-top:40px;padding-bottom:56px}
-.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:#E6F3EB;color:#17643B;font-weight:600;font-size:14px}
-h1{margin:10px 0 6px;font-family:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;font-size:40px;line-height:1.15;font-weight:600}
-.lead{margin:0;font-size:19px;color:#3E4859;max-width:640px}
-.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:28px}
-h2{margin:0 0 18px;font-size:20px;font-weight:600}
+.date{font-size:13px;color:var(--soft)}
+.body{padding:20px 32px 8px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:12px;background:#E6F3EB;color:#17643B;font-weight:600;font-size:13px}
+h1{margin:10px 0 0;font-family:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;font-size:26px;line-height:1.2;font-weight:600}
+.lead{margin:6px 0 0;color:var(--muted)}
+h2{margin:18px 0 4px;font-size:16px;font-weight:600}
 ul,ol{list-style:none;margin:0;padding:0}
-.grid{display:flex;flex-wrap:wrap;gap:16px}
-.done{flex:1 1 260px;display:flex;gap:14px;align-items:flex-start;padding:16px;border-radius:12px;border:1px solid var(--soft)}
-.done div,.todo div{display:flex;flex-direction:column;min-width:0}
-.done span:not(.ic),.todo div span{font-size:15px;color:var(--muted)}
-.ic{flex:none;width:34px;height:34px;border-radius:999px;display:flex;align-items:center;justify-content:center}
-.ic.ok{background:#E6F3EB;color:#17643B}.ic.busy{background:#EAF0F8;color:#24508A}.ic.info{background:#EAF0F8;color:#24508A}
-.steps{display:flex;flex-direction:column;gap:14px}
-.todo{display:flex;gap:16px;align-items:flex-start}
-.num{flex:none;width:34px;height:34px;border-radius:999px;background:var(--ink);color:#fff;font-weight:600;display:flex;align-items:center;justify-content:center}
-.todo div{padding-top:4px}
-.help{background:var(--ink);color:#fff;border-radius:16px;padding:28px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:24px}
-.help>div{flex:1 1 320px;display:flex;flex-direction:column;gap:8px}
-.help h2{margin:0}.help p{margin:0;color:#D7DCE4}
-.btns{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
-.btn{display:inline-flex;align-items:center;min-height:44px;padding:0 18px;border-radius:8px;font-weight:600;text-decoration:none}
-.btn.primary{background:#fff;color:var(--ink)}.btn.ghost{border:1px solid #8D97A8;color:#fff}
-.help dl{flex:0 1 300px;margin:0;display:flex;flex-direction:column;gap:12px;padding:18px 20px;border-radius:12px;background:#34415C}
-.help dl div{display:flex;flex-direction:column}
-.help dt{font-size:13px;color:#C3CAD6}.help dd{margin:0;font-size:15px;font-weight:600}
-.mono{font-family:'Cascadia Mono',Consolas,monospace}
-.big{font-size:22px}.help dd.mono{font-size:17px}.help dd.big{font-size:22px}
-details{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px 28px}
-summary{cursor:pointer;font-weight:600;color:var(--muted);min-height:44px;display:flex;align-items:center}
-.tech{display:flex;flex-direction:column;gap:24px;padding:12px 0 8px;font-size:14px}
-.cols{display:flex;flex-wrap:wrap;gap:24px}
-.cols dl{flex:1 1 360px;min-width:0;margin:0}
-.cols dl div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 16px;padding:8px 0;border-top:1px solid var(--soft)}
-.cols dt{color:var(--muted)}.cols dd{margin:0;font-weight:500;text-align:right}
+li{display:flex;gap:12px;align-items:flex-start;padding:4px 0}
+li div{display:flex;flex-direction:column;min-width:0;padding-top:3px}
+li strong{font-weight:600}
+li div span{font-size:13px;color:var(--muted);margin-top:2px}
+.ic{flex:none;width:28px;height:28px;border-radius:999px;display:flex;align-items:center;justify-content:center}
+.ic svg{width:13px;height:13px}
+.ic.ok{background:#E6F3EB;color:#17643B}.ic.busy{background:#FBF0DE;color:#7F4A00}.ic.info{background:#EAF0F8;color:#24508A}
+.num{flex:none;width:28px;height:28px;border-radius:999px;border:1.5px solid var(--ink);font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center}
+.help{margin:14px 0 8px;background:var(--ink);color:#fff;border-radius:10px;padding:14px 20px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px 24px}
+.help h3{margin:0;font-size:16px;font-weight:600}
+.help p{margin:4px 0 0;color:#D5DAE1}
+.help a{color:#fff}
+.help>div:first-child{flex:1 1 300px}
+.lbl{display:flex;flex-direction:column;flex:none}
+.lbl .k,.lbl .s{font-size:12px;color:#AEB6C4}
+.lbl .v{font-family:Consolas,'Cascadia Mono',monospace;font-size:20px;font-weight:600}
+details{padding:0 32px 16px}
+summary{cursor:pointer;color:var(--soft);font-size:13px;padding:8px 0 4px;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary:hover,summary:focus-visible{text-decoration:underline}
+details[open] summary .t1,summary .t2{display:none}
+details[open] summary .t2{display:inline}
+.tech{margin-top:8px;border:1px solid var(--hair);border-radius:10px;padding:6px 16px 12px;font-size:13px}
+.tech dl{margin:0}
+.tech dl div{display:grid;grid-template-columns:170px 1fr;gap:12px;padding:6px 0;border-top:1px solid #F1F3F6}
+.tech dl div:first-child{border-top:0}
+.tech dt{color:var(--soft)}.tech dd{margin:0}
+.tech h4{margin:16px 0 4px;font-size:13px;font-weight:600}
 .scroll{overflow-x:auto}
-table{width:100%;min-width:640px;border-collapse:collapse}
-caption{text-align:left;font-weight:600;padding-bottom:8px}
-th{text-align:left;color:var(--muted);font-weight:600;padding:8px 12px 8px 0;border-bottom:1px solid var(--line)}
-td{padding:8px 12px 8px 0;border-bottom:1px solid var(--soft);vertical-align:top}
-.logs{display:flex;flex-direction:column;gap:2px;color:var(--muted)}
-@media print{details{display:block}details>*{display:block}body{background:#fff}}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;color:var(--soft);font-weight:600;padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
+td{padding:6px 10px 6px 0;border-bottom:1px solid #F1F3F6;vertical-align:top}
+.mono{font-family:Consolas,'Cascadia Mono',monospace}
+.muted{color:var(--soft)}
+.logs{display:flex;flex-direction:column;gap:2px;color:var(--soft)}
+@media (max-width:600px){.body,details{padding-left:16px;padding-right:16px}.card{margin:0;border-radius:0}.tech dl div{grid-template-columns:1fr}}
+@media print{body{background:#fff}.card{box-shadow:none;margin:0}details>*{display:block}}
 </style>
 </head>
 <body>
-<header><div class="wrap">$Logo<span class="muted">Ge&iuml;nstalleerd op $(Enc $InstallText)</span></div></header>
-<main class="wrap">
+<div class="card">
+<div class="top">$Logo<span class="date">$(Enc $InstallText)</span></div>
+<div class="body">
+<span class="pill"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Klaar voor gebruik</span>
+<h1>$Greeting</h1>
+<p class="lead">$(Enc $Intro)</p>
 
-<section aria-labelledby="welcome">
-<span class="pill"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Klaar voor gebruik</span>
-<h1 id="welcome">$Greeting</h1>
-<p class="lead">Je computer is ingericht en bijgewerkt. Hieronder zie je wat we voor je hebben gedaan en wat je nog moet doen.</p>
-</section>
-
-<section class="card" aria-labelledby="done-title">
-<h2 id="done-title">Wat we hebben gedaan</h2>
-<ul class="grid">
+<h2>Wat we hebben gedaan</h2>
+<ul>
 $DoneHtml
 </ul>
-</section>
 
-<section class="card" aria-labelledby="todo-title">
-<h2 id="todo-title">Wat je nog moet doen</h2>
-<ol class="steps">
+<h2>Wat je nog moet doen</h2>
+<ol>
 $TodoHtml
 </ol>
-</section>
 
-<section class="help" aria-labelledby="help-title">
+<section class="help" aria-label="Hulp nodig">
 <div>
-<h2 id="help-title">Hulp nodig?</h2>
-<p>Neem contact op met de servicedesk van Connectium. Noem dan je C-label: dat is het nummer op de sticker van je computer. Zo kunnen we je sneller helpen.</p>
-<div class="btns">
-<a class="btn primary" href="tel:$(Enc (($HelpPhone -replace '\(0\)', '') -replace '[^\d+]', ''))">$(Enc $HelpPhone)</a>
-<a class="btn ghost" href="mailto:$(Enc $HelpMail)">$(Enc $HelpMail)</a>
+<h3>Hulp nodig?</h3>
+<p>Bel <a href="tel:$PhoneHref">$(Enc $HelpPhone)</a> of mail <a href="mailto:$(Enc $HelpMail)">$(Enc $HelpMail)</a>. $(Enc $HelpAsk)</p>
 </div>
-</div>
-<dl>
-$LabelHtml
-<div><dt>Serienummer</dt><dd class="mono">$(Enc $Serial)</dd></div>
-</dl>
+<div class="lbl">$HelpRight</div>
 </section>
+</div>
 
 <details>
-<summary>Technische details voor IT</summary>
+<summary><span class="t1">Technische details tonen</span><span class="t2">Technische details verbergen</span></summary>
 <div class="tech">
-<div class="cols">
 <dl>
 $Tech1
-</dl>
-<dl>
 $Tech2
 </dl>
-</div>
+<h4>Windows Updates sinds de installatie</h4>
 <div class="scroll">
 <table>
-<caption>Windows Updates sinds de installatie</caption>
 <thead><tr><th scope="col">Tijd</th><th scope="col">KB</th><th scope="col">Update</th><th scope="col">Resultaat</th></tr></thead>
 <tbody>
 $UpdRows
@@ -452,18 +433,18 @@ $UpdRows
 </table>
 </div>
 $DevHtml
+<h4>Logbestanden</h4>
 <div class="logs">
-<strong style="color:var(--ink)">Logbestanden</strong>
 <span class="mono">C:\ProgramData\Scripts\WindowsUpdates\Wrapper.log</span>
 <span class="mono">C:\ProgramData\Scripts\WindowsUpdates\Network.log</span>
+<span class="mono">C:\ProgramData\Scripts\WindowsUpdates\Popup.log</span>
 <span class="mono">C:\ProgramData\Connectium\InstallReport.log</span>
 <span class="mono">C:\Windows\Temp\osdcloud-logs</span>
 <span>Rapport gemaakt op $(Enc $Generated)</span>
 </div>
 </div>
 </details>
-
-</main>
+</div>
 </body>
 </html>
 "@
@@ -477,12 +458,13 @@ function Plain([string]$s) { [System.Net.WebUtility]::HtmlDecode(($s -replace '<
 function IconKind($i) { if ($i -eq $IconOk) { 'ok' } elseif ($i -eq $IconBusy) { 'busy' } else { 'info' } }
 $Json = [ordered]@{
     greeting = Plain $Greeting
-    intro    = 'Je computer is ingericht en bijgewerkt. Hieronder zie je wat we hebben gedaan en wat je nog moet doen.'
+    intro    = $Intro
+    ask      = $HelpAsk
     done     = @($Done | ForEach-Object { [ordered]@{ kind = (IconKind $_.Icon); title = (Plain $_.Title); detail = (Plain $_.Detail) } })
     todo     = @($Todo | ForEach-Object { [ordered]@{ title = (Plain $_.Title); detail = (Plain $_.Detail) } })
     phone    = $HelpPhone
     mail     = $HelpMail
-    clabel   = $DeployCLabel
+    clabel   = $HelpLabel
     serial   = $Serial
     html     = $OutFile
     tech     = @($TechPairs)
