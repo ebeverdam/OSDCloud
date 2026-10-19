@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.v2-test9"
+Write-Host -ForegroundColor Green "Version 2026.10.19.v2-test10"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -589,10 +589,55 @@ Log 'Taak en gasten-WiFi-profiel opgeruimd. Klaar.'
         )
         Set-Content -Path $FirstLogonCmd -Value $FirstLogonContent -Encoding Ascii
 
+        # Taakdefinitie als XML: ook op accu starten/doorlopen (schtasks-standaard = alleen op netstroom),
+        # starten zodra mogelijk als een moment is gemist, maximaal 3 uur looptijd.
+        $TaskXml = @'
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Connectium: eenmalige Windows Update-ronde en installatierapport bij de eerste aanmelding</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <Delay>PT2M</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <ExecutionTimeLimit>PT3H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\ProgramData\Scripts\WindowsUpdates\FirstLogonUpdates.cmd</Command>
+    </Exec>
+  </Actions>
+</Task>
+'@
+        [IO.File]::WriteAllText((Join-Path $WUDir 'FirstLogonTask.xml'), $TaskXml, [Text.Encoding]::Unicode)
+
         $TaskLines = @(
             ''
             'REM === Connectium: eenmalige Windows Update-ronde met GUI bij eerste aanmelding ==='
-            "schtasks /Create /TN `"$TaskName`" /TR `"C:\ProgramData\Scripts\WindowsUpdates\FirstLogonUpdates.cmd`" /SC ONLOGON /DELAY 0002:00 /RU SYSTEM /RL HIGHEST /F"
+            "schtasks /Create /TN `"$TaskName`" /XML `"C:\ProgramData\Scripts\WindowsUpdates\FirstLogonTask.xml`" /F"
         )
         Add-Content -Path $SetupComplete -Value $TaskLines -Encoding Ascii
         Write-Host -ForegroundColor Green "Eenmalige Windows Update-taak voor eerste aanmelding toegevoegd."
