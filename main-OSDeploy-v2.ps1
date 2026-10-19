@@ -7,7 +7,7 @@
 #################################################################
 # Volledige GUI voor OSDCloud Keuzemenu
 #################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.19.v2-test10"
+Write-Host -ForegroundColor Green "Version 2026.10.19.v2-test11"
 
 # Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
 # (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
@@ -336,9 +336,16 @@ switch ($userChoice) {
 # --- Stap 4: Windows Updates (CU + drivers) na installatie via SetupComplete ---
 # OSDCloud v2 heeft (nog) geen werkende Microsoft Update Catalog-driverstap.
 # Daarom draait na de setup, als SYSTEM en voor OOBE, ons eigen Windows Update-script.
-$WUScriptUrl  = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/scripts/Install-OSUpdates.ps1'
-$ReportUrl    = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/scripts/New-InstallReport.ps1'
-$LogoUrl      = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/images/Connectium.png'
+# Scripts voor na de installatie: live van GitHub, met reservekopie uit de ISO als GitHub niet bereikbaar is
+$RepoRaw      = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main'
+$PostFiles    = [ordered]@{
+    'Install-OSUpdates.ps1'  = "$RepoRaw/scripts/Install-OSUpdates.ps1"
+    'Start-UpdatePopup.ps1'  = "$RepoRaw/scripts/Start-UpdatePopup.ps1"
+    'FirstLogon.ps1'         = "$RepoRaw/scripts/FirstLogon.ps1"
+    'New-InstallReport.ps1'  = "$RepoRaw/scripts/New-InstallReport.ps1"
+    'Connectium.png'         = "$RepoRaw/images/Connectium.png"
+}
+$FallbackDir  = 'X:\OSDCloud\Config\Connectium\Scripts'   # reservekopie in WinPE (Build-OSDCloudMedia.ps1)
 $WUScriptArgs = '-Silent'                # alle updates: cumulatieve updates (CU), Defender, .NET en drivers
 $OSDrive      = 'C:'
 $GuestSSID    = 'Connectium Gasten'      # open WiFi: verbinden in SetupComplete als er geen kabel is
@@ -426,16 +433,23 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
     New-Item -Path $WUDir -ItemType Directory -Force | Out-Null
 
     try {
-        Invoke-WebRequest -Uri $WUScriptUrl -OutFile $WUScript -UseBasicParsing
-        Write-Host -ForegroundColor Green "Windows Update-script gedownload naar $WUScript"
-
-        # Installatierapport (na ronde 2 bij eerste aanmelding); mislukt de download, dan gaat de rest door
-        try {
-            Invoke-WebRequest -Uri $ReportUrl -OutFile (Join-Path $WUDir 'New-InstallReport.ps1') -UseBasicParsing
-            Invoke-WebRequest -Uri $LogoUrl   -OutFile (Join-Path $WUDir 'Connectium.png')        -UseBasicParsing
-            Write-Host -ForegroundColor Green "Installatierapport-script gedownload."
+        foreach ($Name in $PostFiles.Keys) {
+            $Dest = Join-Path $WUDir $Name
+            try {
+                Invoke-WebRequest -Uri $PostFiles[$Name] -OutFile $Dest -UseBasicParsing -ErrorAction Stop
+                Write-Host -ForegroundColor Green "Gedownload: $Name"
+            }
+            catch {
+                $Fallback = Join-Path $FallbackDir $Name
+                if (Test-Path $Fallback) {
+                    Copy-Item -Path $Fallback -Destination $Dest -Force
+                    Write-Warning "$Name niet van GitHub gehaald; reservekopie uit de ISO gebruikt."
+                } else {
+                    Write-Warning "$Name niet beschikbaar (GitHub en reservekopie): $($_.Exception.Message)"
+                }
+            }
         }
-        catch { Write-Warning "Installatierapport-script niet gedownload: $($_.Exception.Message)" }
+        if (-not (Test-Path $WUScript)) { throw "Install-OSUpdates.ps1 ontbreekt." }
 
         $SetupScripts  = "$OSDrive\Windows\Setup\Scripts"
         $SetupComplete = Join-Path $SetupScripts 'SetupComplete.cmd'
@@ -519,127 +533,17 @@ exit 0
         Add-Content -Path $SetupComplete -Value $Lines -Encoding Ascii
         Write-Host -ForegroundColor Green "SetupComplete.cmd bijgewerkt."
 
-        # --- Tweede, zichtbare Windows Update-ronde bij de eerste aanmelding ---
-        # Na de herstart (CU afgerond) komen vervolg-updates beschikbaar.
-        # Eenmalige taak als SYSTEM; het script toont via ServiceUI de GUI in de gebruikerssessie.
-        $TaskName     = 'Connectium\FirstLogonWindowsUpdates'
-        $FirstLogonCmd = Join-Path $WUDir 'FirstLogonUpdates.cmd'
-        # FirstLogon.ps1 controleert of de ECHTE gebruiker is aangemeld (niet OOBE/defaultuser0)
-        # en wacht tot het bureaublad er is (na Autopilot-ESP). Pas dan: ronde 2, rapport, opruimen.
-        $FirstLogonPs1 = @'
-# Connectium: eenmalige Windows Update-ronde + installatierapport bij de eerste echte aanmelding
-$TaskName = '__TASK__'
-$SSID     = '__SSID__'
-$Dir      = 'C:\ProgramData\Scripts\WindowsUpdates'
-$LogFile  = Join-Path $Dir 'FirstLogon.log'
-$PsExe    = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
-
-function Log($m) { "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m" | Out-File $LogFile -Append -Encoding utf8 }
-
-function Get-DesktopUser {
-    # Eigenaar van explorer.exe = gebruiker met een bureaublad; defaultuser0 (OOBE) telt niet
-    foreach ($p in @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue)) {
-        $o = Invoke-CimMethod -InputObject $p -MethodName GetOwner -ErrorAction SilentlyContinue
-        if ($o.User -and $o.User -notmatch '^defaultuser\d*$') { return "$($o.Domain)\$($o.User)" }
-    }
-    return $null
-}
-
-Log '--- Taak gestart ---'
-$Setup = Get-ItemProperty 'HKLM:\SYSTEM\Setup' -ErrorAction SilentlyContinue
-if ($Setup.OOBEInProgress -eq 1 -or $Setup.SystemSetupInProgress -eq 1) {
-    Log 'OOBE is nog bezig: overslaan, de taak blijft staan voor de volgende aanmelding.'
-    exit 0
-}
-
-# Wachten (max 30 min) tot het bureaublad van de gebruiker er is; tijdens de Autopilot-ESP is dat nog niet zo
-$User = $null
-for ($i = 0; $i -lt 180; $i++) {
-    $User = Get-DesktopUser
-    if ($User) { break }
-    Start-Sleep -Seconds 10
-}
-if (-not $User) {
-    Log 'Geen bureaublad van een gebruiker gevonden: de taak blijft staan voor de volgende aanmelding.'
-    exit 0
-}
-Log "Gebruiker met bureaublad: $User"
-Start-Sleep -Seconds 20   # bureaublad laten opbouwen
-
-& $PsExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir 'Install-OSUpdates.ps1') -IgnoreOOBECheck
-Log "Windows Update ronde 2 klaar (exitcode $LASTEXITCODE)."
-
-$Report = Join-Path $Dir 'New-InstallReport.ps1'
-if (Test-Path $Report) {
-    & $PsExe -NoProfile -ExecutionPolicy Bypass -File $Report
-    Log "Installatierapport gemaakt (exitcode $LASTEXITCODE)."
-}
-
-schtasks.exe /Delete /TN "$TaskName" /F | Out-Null
-netsh.exe wlan delete profile name="$SSID" | Out-Null   # gasten-WiFi niet meenemen naar de klant
-Log 'Taak en gasten-WiFi-profiel opgeruimd. Klaar.'
-'@
-        $FirstLogonPs1 = $FirstLogonPs1.Replace('__TASK__', $TaskName).Replace('__SSID__', $GuestSSID)
-        Set-Content -Path (Join-Path $WUDir 'FirstLogon.ps1') -Value $FirstLogonPs1 -Encoding UTF8
-
-        $FirstLogonContent = @(
-            '@echo off'
-            'REM Connectium: start FirstLogon.ps1 (controleert zelf of de echte gebruiker is aangemeld)'
-            '"%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\Scripts\WindowsUpdates\FirstLogon.ps1"'
-        )
-        Set-Content -Path $FirstLogonCmd -Value $FirstLogonContent -Encoding Ascii
-
-        # Taakdefinitie als XML: ook op accu starten/doorlopen (schtasks-standaard = alleen op netstroom),
-        # starten zodra mogelijk als een moment is gemist, maximaal 3 uur looptijd.
-        $TaskXml = @'
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Description>Connectium: eenmalige Windows Update-ronde en installatierapport bij de eerste aanmelding</Description>
-  </RegistrationInfo>
-  <Triggers>
-    <LogonTrigger>
-      <Enabled>true</Enabled>
-      <Delay>PT2M</Delay>
-    </LogonTrigger>
-  </Triggers>
-  <Principals>
-    <Principal id="Author">
-      <UserId>S-1-5-18</UserId>
-      <RunLevel>HighestAvailable</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <StartWhenAvailable>true</StartWhenAvailable>
-    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-    <IdleSettings>
-      <StopOnIdleEnd>false</StopOnIdleEnd>
-      <RestartOnIdle>false</RestartOnIdle>
-    </IdleSettings>
-    <Enabled>true</Enabled>
-    <Hidden>false</Hidden>
-    <RunOnlyIfIdle>false</RunOnlyIfIdle>
-    <ExecutionTimeLimit>PT3H</ExecutionTimeLimit>
-    <Priority>7</Priority>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>C:\ProgramData\Scripts\WindowsUpdates\FirstLogonUpdates.cmd</Command>
-    </Exec>
-  </Actions>
-</Task>
-'@
-        [IO.File]::WriteAllText((Join-Path $WUDir 'FirstLogonTask.xml'), $TaskXml, [Text.Encoding]::Unicode)
-
-        $TaskLines = @(
-            ''
-            'REM === Connectium: eenmalige Windows Update-ronde met GUI bij eerste aanmelding ==='
-            "schtasks /Create /TN `"$TaskName`" /XML `"C:\ProgramData\Scripts\WindowsUpdates\FirstLogonTask.xml`" /F"
-        )
-        Add-Content -Path $SetupComplete -Value $TaskLines -Encoding Ascii
+        # --- Tweede, zichtbare Windows Update-ronde met popup bij de eerste aanmelding ---
+        # FirstLogon.ps1 -Register maakt de taak aan (zelfde script als Test-FirstLogonFlow.ps1 gebruikt)
+        if (Test-Path (Join-Path $WUDir 'FirstLogon.ps1')) {
+            $TaskLines = @(
+                ''
+                'REM === Connectium: eenmalige Windows Update-ronde met popup bij eerste aanmelding ==='
+                "%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"C:\ProgramData\Scripts\WindowsUpdates\FirstLogon.ps1`" -Register -GuestSSID `"$GuestSSID`""
+            )
+            Add-Content -Path $SetupComplete -Value $TaskLines -Encoding Ascii
+        }
+        else { Write-Warning "FirstLogon.ps1 ontbreekt: geen tweede update-ronde bij de eerste aanmelding." }
         Write-Host -ForegroundColor Green "Eenmalige Windows Update-taak voor eerste aanmelding toegevoegd."
     }
     catch {
