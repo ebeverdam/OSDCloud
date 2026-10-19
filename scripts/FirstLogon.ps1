@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     -Register   Maakt de geplande taak aan (vanuit SetupComplete, of door Test-FirstLogonFlow.ps1).
-                De taak start bij elke aanmelding, ook op accu, 2 minuten na het aanmelden.
+                De taak start direct bij elke aanmelding (ook op accu) en wacht zelf tot het bureaublad er is.
     (geen)      Wordt door de taak gestart als SYSTEM:
                 1. Wacht tot OOBE klaar is en een echte gebruiker een bureaublad heeft (max 30 min).
                 2. Start de popup in de sessie van de gebruiker (Start-UpdatePopup.ps1 -Ui).
@@ -14,7 +14,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.01
+    Versie: 2026.10.19.03
 #>
 
 param(
@@ -49,7 +49,6 @@ if ($Register) {
   <Triggers>
     <LogonTrigger>
       <Enabled>true</Enabled>
-      <Delay>PT2M</Delay>
     </LogonTrigger>
   </Triggers>
   <Principals>
@@ -109,17 +108,17 @@ if ($Setup.OOBEInProgress -eq 1 -or $Setup.SystemSetupInProgress -eq 1) {
 }
 
 $User = $null
-for ($i = 0; $i -lt 180; $i++) {
+for ($i = 0; $i -lt 600; $i++) {   # max 30 minuten, elke 3 seconden kijken
     $User = Get-DesktopUser
     if ($User) { break }
-    Start-Sleep -Seconds 10
+    Start-Sleep -Seconds 3
 }
 if (-not $User) {
     Log 'Geen bureaublad van een gebruiker gevonden: de taak blijft staan voor de volgende aanmelding.'
     exit 0
 }
 Log "Gebruiker met bureaublad: $User"
-Start-Sleep -Seconds 15   # bureaublad laten opbouwen
+Start-Sleep -Seconds 5    # bureaublad laten opbouwen
 
 $Popup = Join-Path $Dir 'Start-UpdatePopup.ps1'
 if (Test-Path $Popup) {
