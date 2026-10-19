@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.07
+    Versie: 2026.10.19.08
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -320,6 +320,12 @@ function Start-Worker {
 function Start-Ui {
     Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
 
+    # Eigen taakbalk-ID: niet groeperen onder PowerShell, zodat ons eigen pictogram getoond wordt
+    try {
+        Add-Type -Namespace Cx -Name App -MemberDefinition '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string id);'
+        [void][Cx.App]::SetCurrentProcessExplicitAppUserModelID('Connectium.UpdatePopup')
+    } catch {}
+
     # Voornaam voor een persoonlijke aanhef ("Elco Kuipers | Videra B.V." -> "Elco").
     # Geen naam bekend, of alleen de accountnaam (lokaal account zonder volledige naam)? Dan zonder naam.
     $FirstName = ''
@@ -457,6 +463,11 @@ function Start-Ui {
         $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
         $bmp.BeginInit(); $bmp.UriSource = New-Object System.Uri($Script:LogoPath); $bmp.CacheOption = 'OnLoad'; $bmp.EndInit()
         $c.Logo.Source = $bmp
+        # Taakbalkpictogram: het C-beeldmerk (linkerdeel van het logo) i.p.v. het PowerShell-pictogram
+        try {
+            $side = [Math]::Min($bmp.PixelWidth, [int]($bmp.PixelHeight * 1.04))
+            $win.Icon = New-Object System.Windows.Media.Imaging.CroppedBitmap($bmp, (New-Object System.Windows.Int32Rect(0, 0, $side, $bmp.PixelHeight)))
+        } catch {}
     } else { $c.Logo.Visibility = 'Collapsed'; $c.LogoText.Visibility = 'Visible' }
     $c.TxtHelp.Text = "Hulp nodig?`n$Script:HelpPhone"
 
@@ -609,7 +620,7 @@ function Start-Ui {
     $c.BtnPrimary.Add_Click({
         $stage = if ($ui.local) { $ui.local } elseif ($ui.status) { $ui.status.stage } else { 'search' }
         if ($stage -eq 'confirm') { $ui.local = $null; Update-View }
-        elseif ($stage -eq 'done') { Open-Report }
+        elseif ($stage -eq 'done') { Open-Report; $ui.allowClose = $true; $win.Close() }   # rapport open = popup klaar
     })
 
     # Sluiten tijdens updates = verbergen (updates gaan door)
