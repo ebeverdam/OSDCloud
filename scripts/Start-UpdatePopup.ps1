@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.17
+    Versie: 2026.10.19.18
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -721,8 +721,15 @@ function Start-Ui {
 
         if ($bmp) { $f.RLogo.Source = $bmp } else { $f.RLogo.Visibility = 'Collapsed'; $f.RLogoText.Visibility = 'Visible' }
         if ($win.Icon) { $rw.Icon = $win.Icon }
-        $rw.MaxHeight = [System.Windows.SystemParameters]::WorkArea.Height - 24
-        $f.RScroll.MaxHeight = $rw.MaxHeight - 150
+        # Venster altijd binnen het bureaublad (boven de taakbalk); bij uitklappen scrolt de inhoud
+        $wa = [System.Windows.SystemParameters]::WorkArea
+        $rw.MaxHeight = $wa.Height - 16
+        $f.RScroll.MaxHeight = $rw.MaxHeight - 200   # kop + knoppenbalk + marges blijven zichtbaar
+        $rw.Add_SizeChanged({
+            $wa = [System.Windows.SystemParameters]::WorkArea
+            $top = $wa.Top + ($wa.Height - $rw.ActualHeight) / 2
+            $rw.Top = [Math]::Max($wa.Top, $top)
+        })
 
         $f.RGreeting.Text = [string]$r.greeting
         $f.RIntro.Text    = [string]$r.intro
