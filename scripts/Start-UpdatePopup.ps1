@@ -18,7 +18,7 @@
 
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.15
+    Versie: 2026.10.19.16
     Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
 #>
 
@@ -534,7 +534,7 @@ function Start-Ui {
             'search' {
                 Set-Icon 0xE721 '#EAF0F8' '#24508A'
                 $c.TxtTitle.Text = if ($FirstName) { "Hoi $FirstName, je computer wordt bijgewerkt" } else { 'Je computer wordt bijgewerkt' }
-                $c.TxtBody.Text = T 'We kijken nog &eacute;&eacute;n keer of er updates zijn. Je kunt je computer ondertussen gewoon gebruiken.'
+                $c.TxtBody.Text = T 'We kijken nog &eacute;&eacute;n keer of er updates zijn. Je kan je computer ondertussen gewoon gebruiken.'
                 $c.TxtCurrent.Text = T 'Zoeken naar updates&hellip;'; $c.TxtPercent.Text = ''
                 if ($s -and $s.groups) {
                     $c.DetailsBox.Visibility = 'Visible'
@@ -546,7 +546,7 @@ function Start-Ui {
                 Set-Icon 0xE896 '#EAF0F8' '#24508A'
                 $n = [Math]::Min($s.installed + 1, $s.total)
                 $c.TxtTitle.Text = 'Updates installeren'
-                $c.TxtBody.Text = "$n van $($s.total) updates. Je kunt gewoon verder werken."
+                $c.TxtBody.Text = "$n van $($s.total) updates. Je kan gewoon verder werken."
                 $pct = if ($s.total) { [int]([Math]::Round($s.installed / $s.total * 100)) } else { 0 }
                 $c.TxtCurrent.Text = if ($s.rescan) { T 'Controleren op extra updates&hellip;' } elseif ($s.current) { "Nu bezig: $($s.current)" } else { '' }; $c.TxtPercent.Text = "$pct%"
                 $c.Fill.Margin = (New-Object System.Windows.Thickness(0)); $c.Fill.Width = [Math]::Max(0, $c.Track.ActualWidth * $pct / 100)
@@ -764,12 +764,12 @@ function Start-Ui {
         }
 
         # Hulp: telefoon/mail + C-label (of serienummer als er geen C-label is)
-        $f.RHelp.Text = "Bel $($r.phone) of mail $($r.mail). Noem je C-label, dan helpen we je sneller."
+        $ask = if ([string]$r.ask) { [string]$r.ask } elseif ([string]$r.clabel) { 'Noem je C-label, dan helpen we je sneller.' } else { 'Noem je serienummer, dan helpen we je sneller.' }
+        $f.RHelp.Text = "Bel $($r.phone) of mail $($r.mail). $ask"
         if ([string]$r.clabel) {
             $f.RLabel.Text = [string]$r.clabel; $f.RSerial.Text = "Serienummer $($r.serial)"
         } else {
             $f.RLabelKey.Text = 'Serienummer'; $f.RLabel.Text = [string]$r.serial; $f.RSerial.Visibility = 'Collapsed'
-            $f.RHelp.Text = "Bel $($r.phone) of mail $($r.mail). Noem je serienummer, dan helpen we je sneller."
         }
 
         $f.Header.Add_MouseLeftButtonDown({ try { $rw.DragMove() } catch {} })
