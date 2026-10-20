@@ -1,16 +1,10 @@
-# =================================================================
 # OSDCloud Deployment Script met GUI
 # Versie: v2 (OSDCloud-module / Deploy-OSDCloud) - TEST
 # Auteur: Connectium B.V. / E. Beverdam
-# =================================================================
 
-#################################################################
-# Volledige GUI voor OSDCloud Keuzemenu
-#################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.19.v2-test11"
+Write-Host -ForegroundColor Green "Version 2026.10.20.v2-test12"
 
-# Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
-# (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
+### Workaround OSD HP-datum (nl-NL) ###
 [System.Threading.Thread]::CurrentThread.CurrentCulture   = 'en-US'
 [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'
 function Show-OSDCloudGUI_Dashboard {
@@ -26,7 +20,7 @@ function Show-OSDCloudGUI_Dashboard {
     $form.MaximizeBox = $false
     $form.MinimizeBox = $false
 
-    # --- Logo sectie ---
+    ### Logo ###
     function Download-FileWithRetry {
         param(
             [string]$Url,
@@ -71,7 +65,6 @@ function Show-OSDCloudGUI_Dashboard {
         Write-Warning "Kon het logo niet downloaden na meerdere pogingen."
     }
 
-    
     $font = New-Object System.Drawing.Font('Segoe UI', 10)
     $fontGroupBox = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
     $fontInfo = New-Object System.Drawing.Font('Segoe UI', 9)
@@ -162,10 +155,8 @@ function Show-OSDCloudGUI_Dashboard {
     return $selection
 }
 
-# =================================================================
-# Gegevens van het apparaat invullen (C-label, klant)
-# =================================================================
-$CLabelPattern = '^C\d{4,6}$'   # bijvoorbeeld C01234
+### Invulvenster C-label en klant ###
+$CLabelPattern = '^C\d{4,6}$'
 
 function Show-DeploymentInfoForm {
     Add-Type -AssemblyName System.Windows.Forms
@@ -278,12 +269,9 @@ function Show-DeploymentInfoForm {
     return $info
 }
 
-# =================================================================
-# HOOFDSCRIPT LOGICA
-# =================================================================
+### Hoofdscript ###
 
-# --- Stap 1: Keuze in het menu, daarna gegevens van het apparaat ---
-# "Terug naar menu" in het gegevensvenster toont het keuzemenu opnieuw.
+### Stap 1: Menu en apparaatgegevens ###
 $DeployInfo = $null
 do {
     $userChoice = Show-OSDCloudGUI_Dashboard
@@ -296,17 +284,13 @@ if ($DeployInfo) {
     Write-Host -ForegroundColor Cyan "C-label: $shown - Klant: $($DeployInfo.Customer)"
 }
 
-# --- Stap 2: Nieuwe OSDCloud-module (v2) laden ---
+### Stap 2: OSDCloud-module laden ###
 if ($userChoice -in ('1', '2', '3', '4')) {
     Write-Host -ForegroundColor Yellow "Keuze '$userChoice' ontvangen. OSDCloud (v2) wordt voorbereid..."
     Import-Module OSDCloud -Force
     Write-Host -ForegroundColor Green "OSDCloud module versie: $((Get-Module OSDCloud).Version)"
 }
 
-# Gedeelde instellingen voor de zero-touch opties
-# -CLI   : geen OSDCloud-GUI, direct starten
-# -Force : schijf wissen zonder bevestiging (zero-touch)
-# -PostAction Quit : niet zelf herstarten; eerst SetupComplete voorbereiden (Stap 4)
 $DeployCommon = @{
     CLI          = $true
     Force        = $true
@@ -315,12 +299,12 @@ $DeployCommon = @{
     OSActivation = 'Volume'
 }
 
-# --- Stap 3: Voer de actie uit die overeenkomt met de gemaakte keuze ---
+### Stap 3: Installatie ###
 switch ($userChoice) {
     '1' { Deploy-OSDCloud @DeployCommon -OperatingSystem 'Windows 11 26H2' -OSLanguageCode 'nl-nl' }
     '2' { Deploy-OSDCloud @DeployCommon -OperatingSystem 'Windows 11 25H2' -OSLanguageCode 'nl-nl' }
     '3' { Deploy-OSDCloud @DeployCommon -OperatingSystem 'Windows 11 26H2' -OSLanguageCode 'en-us' }
-    '4' { Deploy-OSDCloud -PostAction Quit }      # OSDCloud v2 GUI
+    '4' { Deploy-OSDCloud -PostAction Quit }
     '5' {
         Write-Host -ForegroundColor Yellow "Script wordt afgesloten. De computer wordt nu opnieuw opgestart..."
         Start-Sleep -Seconds 3
@@ -333,10 +317,7 @@ switch ($userChoice) {
     }
 }
 
-# --- Stap 4: Windows Updates (CU + drivers) na installatie via SetupComplete ---
-# OSDCloud v2 heeft (nog) geen werkende Microsoft Update Catalog-driverstap.
-# Daarom draait na de setup, als SYSTEM en voor OOBE, ons eigen Windows Update-script.
-# Scripts voor na de installatie: live van GitHub, met reservekopie uit de ISO als GitHub niet bereikbaar is
+### Stap 4: SetupComplete ###
 $RepoRaw      = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main'
 $PostFiles    = [ordered]@{
     'Install-OSUpdates.ps1'  = "$RepoRaw/scripts/Install-OSUpdates.ps1"
@@ -345,13 +326,13 @@ $PostFiles    = [ordered]@{
     'New-InstallReport.ps1'  = "$RepoRaw/scripts/New-InstallReport.ps1"
     'Connectium.png'         = "$RepoRaw/images/Connectium.png"
 }
-$FallbackDir  = 'X:\OSDCloud\Config\Connectium\Scripts'   # reservekopie in WinPE (Build-OSDCloudMedia.ps1)
-$WUScriptArgs = '-Silent'                # alle updates: cumulatieve updates (CU), Defender, .NET en drivers
+$FallbackDir  = 'X:\OSDCloud\Config\Connectium\Scripts'
+$WUScriptArgs = '-Silent'
 $OSDrive      = 'C:'
-$GuestSSID    = 'Connectium Gasten'      # open WiFi: verbinden in SetupComplete als er geen kabel is
+$GuestSSID    = 'Connectium Gasten'
 
 if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
-    # --- Gegevens van het apparaat vastleggen + C-label als computernaam ---
+    ### C-label en computernaam ###
     if ($DeployInfo) {
         try {
             $DeployData = [ordered]@{
@@ -362,12 +343,10 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
                 Choice        = $userChoice
             }
 
-            # 1. JSON-bestand op C:
             $DataDir = "$OSDrive\ProgramData\Connectium"
             New-Item -Path $DataDir -ItemType Directory -Force | Out-Null
             $DeployData | ConvertTo-Json | Set-Content -Path (Join-Path $DataDir 'Deployment.json') -Encoding UTF8
 
-            # 2. Register (offline SOFTWARE-hive): HKLM\SOFTWARE\Connectium\Deployment
             $null = reg.exe load 'HKLM\OSD_SOFTWARE' "$OSDrive\Windows\System32\config\SOFTWARE"
             try {
                 foreach ($k in $DeployData.Keys) {
@@ -380,7 +359,6 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
             }
             Write-Host -ForegroundColor Green "Gegevens vastgelegd (C-label: $($DeployData.CLabel), klant: $($DeployData.Customer))."
 
-            # 3. C-label als computernaam via unattend.xml (specialize-fase)
             if ($DeployInfo.CLabel) {
                 $Arch      = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
                 $Panther   = "$OSDrive\Windows\Panther"
@@ -455,7 +433,7 @@ if (Test-Path "$OSDrive\Windows\System32\config\SOFTWARE") {
         $SetupComplete = Join-Path $SetupScripts 'SetupComplete.cmd'
         New-Item -Path $SetupScripts -ItemType Directory -Force | Out-Null
 
-        # --- Netwerk in SetupComplete: zonder kabel verbinden met het gasten-WiFi ---
+        ### Gasten-WiFi in SetupComplete ###
         $WlanXml = @"
 <?xml version="1.0"?>
 <WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
@@ -521,7 +499,6 @@ exit 0
         $ConnectScript = $ConnectScript.Replace('__SSID__', $GuestSSID)
         Set-Content -Path (Join-Path $WUDir 'Connect-Network.ps1') -Value $ConnectScript -Encoding UTF8
 
-        # Toevoegen (niet overschrijven): OSDCloud kan hier zelf al driverpack-stappen in zetten
         $Lines = @(
             ''
             'REM === Connectium: netwerk (kabel of gasten-WiFi) ==='
@@ -533,8 +510,7 @@ exit 0
         Add-Content -Path $SetupComplete -Value $Lines -Encoding Ascii
         Write-Host -ForegroundColor Green "SetupComplete.cmd bijgewerkt."
 
-        # --- Tweede, zichtbare Windows Update-ronde met popup bij de eerste aanmelding ---
-        # FirstLogon.ps1 -Register maakt de taak aan (zelfde script als Test-FirstLogonFlow.ps1 gebruikt)
+        ### Update-popup bij eerste aanmelding ###
         if (Test-Path (Join-Path $WUDir 'FirstLogon.ps1')) {
             $TaskLines = @(
                 ''
@@ -551,7 +527,6 @@ exit 0
         Write-Warning "De installatie gaat door zonder Windows Update-drivers."
     }
 
-    # Melding vooraf: tijdens SetupComplete kan Windows geen vensters tonen
     try {
         Add-Type -AssemblyName System.Windows.Forms
         Add-Type -AssemblyName System.Drawing
@@ -611,7 +586,6 @@ exit 0
     wpeutil reboot
 }
 else {
-    # Geen Windows op C: -> deployment is gestopt of mislukt. Niet herstarten, zodat je de fout kunt lezen.
     Write-Warning "Geen Windows-installatie gevonden op $OSDrive. Controleer de meldingen hierboven."
     Write-Host "Logs: X:\Windows\Temp\osdcloud-logs"
 }

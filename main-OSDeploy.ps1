@@ -1,23 +1,14 @@
-# =================================================================
 # OSDCloud Deployment Script met GUI
 # Versie: Definitief
 # Auteur: Connectium B.V. / E. Beverdam
-# =================================================================
 
-#################################################################
-# Volledige GUI voor OSDCloud Keuzemenu
-#################################################################
-Write-Host -ForegroundColor Green "Version 2026.10.16.03"
+Write-Host -ForegroundColor Green "Version 2026.10.20.01"
 
-# Workaround OSD 26.10.6.1: HP-driverpack catalogus datumparsing faalt onder nl-NL WinPE
-# (opgelost in OSD 26.10.12 - verwijderen zodra die als stabiele versie beschikbaar is)
+### Workaround OSD HP-datum (nl-NL) ###
 [System.Threading.Thread]::CurrentThread.CurrentCulture   = 'en-US'
 [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'
 
-#################################################################
-# Keuze v1 (OSD / Start-OSDCloud) of v2 (OSDCloud / Deploy-OSDCloud)
-# Geen keuze binnen de tijd = v1, zodat zero-touch ongewijzigd blijft.
-#################################################################
+### Keuze v1 of v2 ###
 $V2ScriptUrl = 'https://raw.githubusercontent.com/ebeverdam/OSDCloud/refs/heads/main/main-OSDeploy-v2.ps1'
 
 function Show-OSDCloudVersionChoice {
@@ -78,7 +69,6 @@ function Show-OSDCloudVersionChoice {
             $form.Close()
         }
     })
-    # Bij klikken of muisbeweging over het venster: aftellen stoppen, gebruiker kiest zelf
     $form.Add_MouseEnter({ if ($timer.Enabled) { $timer.Stop(); $btnV1.Text = 'v1 - Productie' } })
 
     $form.Controls.AddRange(@($title, $body, $btnV1, $btnV2))
@@ -107,8 +97,6 @@ if ($DeployVersion -eq 'v2') {
     }
 
     if ($V2Script) {
-        # Alleen de download valt terug op v1. Gaat er tijdens v2 iets mis, dan NIET
-        # alsnog v1 starten (de schijf kan al gewist zijn): venster openhouden voor de fout.
         Invoke-Expression $V2Script
         Write-Warning "v2 is beeindigd zonder herstart. Lees de meldingen hierboven."
         Read-Host 'Druk op Enter om af te sluiten'
@@ -129,7 +117,7 @@ function Show-OSDCloudGUI_Dashboard {
     $form.MaximizeBox = $false
     $form.MinimizeBox = $false
 
-    # --- Logo sectie ---
+    ### Logo ###
     function Download-FileWithRetry {
         param(
             [string]$Url,
@@ -174,7 +162,6 @@ function Show-OSDCloudGUI_Dashboard {
         Write-Warning "Kon het logo niet downloaden na meerdere pogingen."
     }
 
-    
     $font = New-Object System.Drawing.Font('Segoe UI', 10)
     $fontGroupBox = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
     $fontInfo = New-Object System.Drawing.Font('Segoe UI', 9)
@@ -265,20 +252,15 @@ function Show-OSDCloudGUI_Dashboard {
     return $selection
 }
 
-# =================================================================
-# HOOFDSCRIPT LOGICA
-# =================================================================
+### Hoofdscript ###
 
-# --- Stap 1: Roep de GUI aan en wacht op de keuze van de gebruiker ---
-# Het script pauzeert hier totdat er een knop is ingedrukt.
+### Stap 1: Menu ###
 $userChoice = Show-OSDCloudGUI_Dashboard
 
-# --- Stap 2: Bereid de installatie voor als er een installatie-optie is gekozen ---
-# Deze code wordt alleen uitgevoerd als de gebruiker NIET op afsluiten heeft geklikt.
+### Stap 2: Installatie voorbereiden ###
 if ($userChoice -in ('1', '2', '3', '4')) {
     Write-Host -ForegroundColor Yellow "Keuze '$userChoice' ontvangen. OSDCloud wordt voorbereid..."
 
-    # Definieer de OSDCloud variabelen. Deze worden alleen ingesteld als het nodig is.
     $Global:MyOSDCloud = [ordered]@{
         Restart               = [bool]$true
         RecoveryPartition     = [bool]$true
@@ -294,8 +276,7 @@ if ($userChoice -in ('1', '2', '3', '4')) {
     }
 }
 
-# --- Stap 3: Voer de actie uit die overeenkomt met de gemaakte keuze ---
-# De switch reageert op de variabele $userChoice uit de GUI.
+### Stap 3: Installatie ###
 switch ($userChoice) {
     '1' { Start-OSDCloud -OSName 'Windows 11 26H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Pro' -OSActivation 'Volume' }
     '2' { Start-OSDCloud -OSName 'Windows 11 25H2 x64' -OSLanguage 'nl-nl' -OSEdition 'Pro' -OSActivation 'Volume' }
@@ -309,12 +290,11 @@ switch ($userChoice) {
     '6' { 
         Write-Host -ForegroundColor Yellow "Script wordt afgesloten."
         Start-Sleep -Seconds 3
-        exit # Stop het script hier volledig
+        exit
     }
 }
 
-# --- Stap 4: Herstart de computer na afloop ---
-# Deze laatste stap wordt overgeslagen als de gebruiker voor optie '6' heeft gekozen.
+### Stap 4: Herstarten ###
 Write-Host -ForegroundColor Green "Actie voltooid. De computer wordt nu opnieuw opgestart..."
 Start-Sleep -Seconds 5
 wpeutil reboot
