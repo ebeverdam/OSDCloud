@@ -1,20 +1,9 @@
 <#
 .SYNOPSIS
     Connectium: eenmalige Windows Update-ronde met popup + opleverrapport bij de eerste aanmelding.
-
-.DESCRIPTION
-    -Register   Maakt de geplande taak aan (vanuit SetupComplete, of door Test-FirstLogonFlow.ps1).
-                De taak start direct bij elke aanmelding (ook op accu). Updates starten meteen; de popup zelf wacht als Windows Hello/ESP op de voorgrond staat.
-    (geen)      Wordt door de taak gestart als SYSTEM:
-                1. Wacht tot OOBE klaar is en een echte gebruiker een bureaublad heeft (max 30 min).
-                2. Start de popup in de sessie van de gebruiker (Start-UpdatePopup.ps1 -Ui).
-                3. Voert de updates uit als SYSTEM (Start-UpdatePopup.ps1 -Worker).
-                4. Verwijdert de taak en het gasten-WiFi-profiel.
-                Valt terug op Install-OSUpdates.ps1 + New-InstallReport.ps1 als de popup ontbreekt.
-
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.06
+    Versie: 2026.10.20.01
 #>
 
 param(
@@ -36,9 +25,7 @@ function Log([string]$m) {
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m" | Out-File $LogFile -Append -Encoding utf8
 }
 
-# =================================================================
-#  Taak aanmaken
-# =================================================================
+### Taak aanmaken ###
 if ($Register) {
     $Xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
@@ -88,11 +75,8 @@ if ($Register) {
     exit 0
 }
 
-# =================================================================
-#  Uitvoeren (door de taak, als SYSTEM)
-# =================================================================
+### Uitvoeren als SYSTEM ###
 function Get-DesktopUser {
-    # Eigenaar van explorer.exe = gebruiker met een bureaublad; defaultuser0 (OOBE) telt niet
     foreach ($p in @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue)) {
         $o = Invoke-CimMethod -InputObject $p -MethodName GetOwner -ErrorAction SilentlyContinue
         if ($o.User -and $o.User -notmatch '^defaultuser\d*$') { return "$($o.Domain)\$($o.User)" }
@@ -108,7 +92,7 @@ if ($Setup.OOBEInProgress -eq 1 -or $Setup.SystemSetupInProgress -eq 1) {
 }
 
 $User = $null
-for ($i = 0; $i -lt 600; $i++) {   # max 30 minuten, elke 3 seconden kijken
+for ($i = 0; $i -lt 600; $i++) {
     $User = Get-DesktopUser
     if ($User) { break }
     Start-Sleep -Seconds 3
@@ -118,23 +102,19 @@ if (-not $User) {
     exit 0
 }
 Log "Gebruiker met bureaublad: $User"
-Start-Sleep -Seconds 5    # bureaublad laten opbouwen
+Start-Sleep -Seconds 5
 
 $Popup = Join-Path $Dir 'Start-UpdatePopup.ps1'
 if (Test-Path $Popup) {
-    # Uitwisselmap: SYSTEM schrijft de status, de gebruiker mag vlaggen (afbreken/gesloten) schrijven
     if (Test-Path $PopupDir) { Remove-Item -Path "$PopupDir\*" -Force -ErrorAction SilentlyContinue }
     New-Item -Path $PopupDir -ItemType Directory -Force | Out-Null
     $null = icacls.exe $PopupDir /grant '*S-1-5-32-545:(OI)(CI)M' /Q
 
-    # Updates direct starten als SYSTEM (achtergrond), zodat er geen tijd verloren gaat
     $Worker = Start-Process -FilePath $PsExe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Popup`" -Worker" -WindowStyle Hidden -PassThru
-    $null = $Worker.Handle   # nodig om straks de exitcode te kunnen lezen
+    $null = $Worker.Handle
     Log "Worker gestart op de achtergrond (PID $($Worker.Id))."
 
-    # Popup starten in de sessie van de gebruiker (groep Users), ook op accu
     if (-not $Worker.HasExited) { try {
-        # Via conhost --headless: geen (leeg) consolevenster. Windows Terminal negeert -WindowStyle Hidden.
         $Conhost   = "$env:WINDIR\System32\conhost.exe"
         $PsArgs    = "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$Popup`" -Ui"
         $Action    = if (Test-Path $Conhost) { New-ScheduledTaskAction -Execute $Conhost -Argument "--headless `"$PsExe`" $PsArgs" }
@@ -148,21 +128,18 @@ if (Test-Path $Popup) {
     catch { Log "Popup starten mislukt: $($_.Exception.Message) - updates gaan wel door." } }
     else { Log 'Worker was al klaar voordat het setup-scherm weg was: geen popup nodig.' }
 
-    # Wachten tot de updates klaar zijn
     $Worker.WaitForExit()
     Log "Worker klaar (exitcode $($Worker.ExitCode))."
 
     Unregister-ScheduledTask -TaskName $UiTaskName -TaskPath $UiTaskPath -Confirm:$false -ErrorAction SilentlyContinue
 }
 else {
-    # Terugval: oude manier
     Log 'Start-UpdatePopup.ps1 niet gevonden: terugval op Install-OSUpdates + rapport.'
     & $PsExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir 'Install-OSUpdates.ps1') -IgnoreOOBECheck
     $Report = Join-Path $Dir 'New-InstallReport.ps1'
     if (Test-Path $Report) { & $PsExe -NoProfile -ExecutionPolicy Bypass -File $Report }
 }
 
-# Opruimen: taak en gasten-WiFi (niet meenemen naar de klant)
 schtasks.exe /Delete /TN $TaskName /F | Out-Null
 netsh.exe wlan delete profile name="$GuestSSID" | Out-Null
 Log 'Taak en gasten-WiFi-profiel opgeruimd. Klaar.'
