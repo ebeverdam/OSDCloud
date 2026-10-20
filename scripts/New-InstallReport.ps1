@@ -1,20 +1,9 @@
 <#
 .SYNOPSIS
-    Connectium installatierapport: verzamelt de status van een vers geinstalleerde
-    computer en toont een begrijpelijk HTML-rapport in Edge.
-
-.DESCRIPTION
-    - Draait als SYSTEM aan het einde van de eerste Windows Update-ronde bij aanmelding
-      (FirstLogonUpdates.cmd), of handmatig als administrator.
-    - Schrijft C:\ProgramData\Connectium\Installatierapport.html (zelfstandig bestand,
-      logo ingebed, werkt offline).
-    - Opent het rapport in Edge in de sessie van de aangemelde gebruiker.
-    - Bovenaan uitleg voor de gebruiker, onderaan ingeklapt "Technische details voor IT".
-
+    Connectium installatierapport (HTML + JSON voor het rapportvenster).
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.08
-    Bestand is bewust ASCII: niet-ASCII tekens staan als HTML-entity (PowerShell 5.1).
+    Versie: 2026.10.20.02
 #>
 
 param(
@@ -22,27 +11,27 @@ param(
     [switch]$NoOpen
 )
 
-# === Instellingen ===============================================
+### Instellingen ###
 $HelpPhone    = '+31 (0)548-722045'
 $HelpMail     = 'support@connectium.nl'
 $LogoPath     = 'C:\ProgramData\Scripts\WindowsUpdates\Connectium.png'
-$LabelPattern = '^C\d{4,6}$'      # C-label, bijvoorbeeld C01234
+$LabelPattern = '^C\d{4,6}$'
 $LogDir       = Split-Path $OutFile -Parent
 
 New-Item -Path $LogDir -ItemType Directory -Force | Out-Null
 Start-Transcript -Path (Join-Path $LogDir 'InstallReport.log') -Append | Out-Null
 
-# === Hulpfuncties ===============================================
+### Hulpfuncties ###
 function Enc([object]$s) { [System.Net.WebUtility]::HtmlEncode([string]$s) }
 
 function Get-Safe([scriptblock]$Block, $Default = $null) {
-    $ErrorActionPreference = 'Stop'   # ook niet-afbrekende fouten opvangen
+    $ErrorActionPreference = 'Stop'
     try { $r = & $Block; if ($null -eq $r) { $Default } else { $r } } catch { $Default }
 }
 
 $NL = [System.Globalization.CultureInfo]::GetCultureInfo('nl-NL')
 
-# === Gegevens verzamelen =========================================
+### Gegevens verzamelen ###
 Write-Host "Gegevens verzamelen..."
 
 $cs   = Get-Safe { Get-CimInstance Win32_ComputerSystem }
@@ -65,7 +54,7 @@ $OsLanguage   = Get-Safe { (Get-WinSystemLocale).Name } ''
 $InstallDate  = Get-Safe { $os.InstallDate } (Get-Date)
 $InstallText  = $InstallDate.ToString('d MMMM yyyy', $NL)
 
-# --- Gebruiker en organisatie ---
+### Gebruiker en organisatie ###
 $UserName    = Get-Safe { $cs.UserName } ''
 $DisplayName = Get-Safe { (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI').LastLoggedOnDisplayName } ''
 $FirstName   = if ($DisplayName) { ($DisplayName -split '\s+')[0] } elseif ($UserName) { ($UserName -split '\\')[-1] } else { '' }
@@ -81,7 +70,6 @@ $AadJoined    = (Get-DsregValue 'AzureAdJoined') -eq 'YES'
 $DomainJoined = (Get-DsregValue 'DomainJoined') -eq 'YES'
 $TenantName   = Get-DsregValue 'TenantName'
 $DomainName   = Get-DsregValue 'DomainName'
-# Gegevens uit de deployment (WinPE-invulvenster): HKLM\SOFTWARE\Connectium\Deployment
 $DeployReg    = Get-Safe { Get-ItemProperty 'HKLM:\SOFTWARE\Connectium\Deployment' }
 $DeployCLabel = Get-Safe { [string]$DeployReg.CLabel } ''
 $Customer     = Get-Safe { [string]$DeployReg.Customer } ''
@@ -98,7 +86,6 @@ $Intune = Get-Safe {
 $Autopilot        = Get-Safe { Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Provisioning\Diagnostics\AutoPilot' -ErrorAction Stop }
 $AutopilotProfile = Get-Safe { [string]$Autopilot.DeploymentProfileName } ''
 $AutopilotTenant  = Get-Safe { [string]$Autopilot.CloudAssignedTenantDomain } ''
-# Nieuwere builds vullen DeploymentProfileName niet altijd; dan uit de policy-cache halen
 if (-not $AutopilotProfile) {
     $AutopilotProfile = Get-Safe {
         $cache = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Provisioning\AutopilotPolicyCache' -ErrorAction Stop
@@ -109,7 +96,7 @@ if (-not $AutopilotProfile) {
     } ''
 }
 
-# --- Activering ---
+### Activering ###
 $License = Get-Safe {
     Get-CimInstance SoftwareLicensingProduct -Filter "ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL" |
         Select-Object -First 1
@@ -117,7 +104,7 @@ $License = Get-Safe {
 $Activated   = Get-Safe { $License.LicenseStatus -eq 1 } $false
 $LicenseInfo = Get-Safe { $License.Description } ''
 
-# --- Beveiliging ---
+### Beveiliging ###
 $Tpm        = Get-Safe { Get-Tpm }
 $TpmOk      = Get-Safe { $Tpm.TpmPresent -and $Tpm.TpmReady } $false
 $SecureBoot = Get-Safe { Confirm-SecureBootUEFI } $false
@@ -126,7 +113,7 @@ $AvOk       = Get-Safe { $Mp.AntivirusEnabled -and $Mp.RealTimeProtectionEnabled
 $AvSig      = Get-Safe { $Mp.AntivirusSignatureVersion } '-'
 $FwOk       = Get-Safe { -not (Get-NetFirewallProfile | Where-Object { -not $_.Enabled }) } $false
 
-# --- BitLocker ---
+### BitLocker ###
 $Bl          = Get-Safe { Get-BitLockerVolume -MountPoint 'C:' -ErrorAction Stop }
 $BlStatus    = Get-Safe { [string]$Bl.VolumeStatus } 'Onbekend'
 $BlProtect   = Get-Safe { [string]$Bl.ProtectionStatus } 'Onbekend'
@@ -135,21 +122,18 @@ $BlProtector = Get-Safe { ($Bl.KeyProtector | ForEach-Object { [string]$_.KeyPro
 $BlPolicy    = Get-Safe { (Get-Item 'HKLM:\SOFTWARE\Microsoft\PolicyManager\current\device\BitLocker' -ErrorAction Stop).Property.Count -gt 0 } $false
 
 if ($BlStatus -eq 'FullyEncrypted' -and $BlProtect -eq 'On') { $EncState = 'ok' }
-elseif ($BlStatus -eq 'EncryptionInProgress' -or $BlPolicy) { $EncState = 'busy' }   # echt bezig, of beleid is binnen
-else { $EncState = 'off' }   # geen beleid en niet actief (ook: versleuteld maar wacht op activering)
+elseif ($BlStatus -eq 'EncryptionInProgress' -or $BlPolicy) { $EncState = 'busy' }
+else { $EncState = 'off' }
 
-# --- Drivers ---
-$PnP          = Get-Safe { @(Get-CimInstance Win32_PnPEntity -Filter 'ConfigManagerErrorCode <> 0') } @()   # alleen apparaten met een probleem (sneller)
+### Drivers ###
+$PnP          = Get-Safe { @(Get-CimInstance Win32_PnPEntity -Filter 'ConfigManagerErrorCode <> 0') } @()
 $ProblemDevs  = @($PnP | Where-Object { $_.ConfigManagerErrorCode -and $_.ConfigManagerErrorCode -ne 22 })
 $MissingDrv   = @($ProblemDevs | Where-Object { $_.ConfigManagerErrorCode -eq 28 }).Count
 
-# --- Opslag en netwerk ---
+### Opslag en netwerk ###
 $Disk    = Get-Safe { Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'" }
 $DiskTot = Get-Safe { [math]::Round($Disk.Size / 1GB) } 0
 $DiskFre = Get-Safe { [math]::Round($Disk.FreeSpace / 1GB) } 0
-# Alle actieve adapters met hardware (ook virtuele Hyper-V-kaart), zonder VPN/loopback/virtuele switches
-# @() buiten Get-Safe: een functie pakt een array met 1 element uit, en .Count op een
-# losse CimInstance is in PowerShell 5.1 leeg -> gaf ten onrechte "Geen actieve verbinding".
 $NetUp   = @(Get-Safe { Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' -and -not $_.Virtual } } | Where-Object { $_ })
 $NetText = if ($NetUp.Count) {
     ($NetUp | ForEach-Object {
@@ -158,11 +142,11 @@ $NetText = if ($NetUp.Count) {
     }) -join ', '
 } else { 'Geen actieve verbinding' }
 
-# --- Herstart nodig? ---
+### Herstart nodig? ###
 $RebootPending = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or
                  (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
 
-# --- Windows Updates sinds installatie (Windows Update-historie) ---
+### Windows Update-historie ###
 $Updates = @()
 try {
     $Searcher = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher()
@@ -185,9 +169,6 @@ try {
         }
     }
 } catch { Write-Warning "Windows Update-historie niet beschikbaar: $($_.Exception.Message)" }
-# Per update maar een regel: drivers mislukken vaak bij de eerste poging (basisdriver nog niet
-# aanwezig) en lukken daarna wel. Alleen de eindstand tonen.
-# Store-apps (titel "9NBLGGH3FRZM-Microsoft.VCLibs...") krijgen een leesbare naam.
 $Updates = @($Updates | Group-Object Title | ForEach-Object {
     $tries = @($_.Group | Sort-Object Date)
     $last  = $tries[-1]
@@ -198,31 +179,27 @@ $Updates = @($Updates | Group-Object Title | ForEach-Object {
 } | Sort-Object Date)
 $UpdatesOk = @($Updates | Where-Object Ok).Count
 
-# === Teksten voor de gebruiker ===================================
+### Teksten voor de gebruiker ###
 $IconOk   = '<span class="ic ok" role="img" aria-label="Gereed"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>'
 $IconBusy = '<span class="ic busy" role="img" aria-label="Wordt nog afgerond"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 5v3.2l2 1.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>'
 $IconInfo = '<span class="ic info" role="img" aria-label="Informatie"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 7v5.5M8 3.8v.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>'
 
 $Done = @()
-# 1. Windows
 if ($UpdatesOk -gt 0) {
     $Done += @{ Icon = $IconOk; Title = 'Windows is bijgewerkt'; Detail = "$(Enc $OsName) ($(Enc $OsVersion)) met $UpdatesOk updates sinds de installatie." }
 } else {
     $Done += @{ Icon = $IconOk; Title = 'Windows is ge&iuml;nstalleerd'; Detail = "$(Enc $OsName) ($(Enc $OsVersion)). Er waren geen extra updates nodig." }
 }
-# 2. Beveiliging
 if ($AvOk -and $FwOk) {
     $Done += @{ Icon = $IconOk; Title = 'Je computer is beveiligd'; Detail = 'Virusscanner en firewall staan aan.' }
 } else {
     $Done += @{ Icon = $IconBusy; Title = 'Beveiliging wordt ingesteld'; Detail = 'Dit gebeurt automatisch op de achtergrond.' }
 }
-# 3. Account
 if (-not $IsLocalUser) {
     $Done += @{ Icon = $IconOk; Title = "Gekoppeld aan $(Enc $OrgName)"; Detail = 'Je logt in met je werkaccount; je instellingen en apps komen vanzelf.' }
 } else {
     $Done += @{ Icon = $IconInfo; Title = 'Aangemeld met een lokaal account'; Detail = 'Deze computer gebruikt een lokaal account, niet gekoppeld aan een organisatieaccount.' }
 }
-# 4. Drivers
 if ($ProblemDevs.Count -eq 0) {
     $Done += @{ Icon = $IconOk; Title = 'Alle onderdelen werken'; Detail = 'Scherm, geluid, wifi, camera en andere onderdelen zijn herkend.' }
 } else {
@@ -230,7 +207,6 @@ if ($ProblemDevs.Count -eq 0) {
     $word = if ($n -eq 1) { 'onderdeel' } else { 'onderdelen' }
     $Done += @{ Icon = $IconBusy; Title = 'Bijna alle onderdelen werken'; Detail = "Voor $n $word wordt nog een stuurprogramma gezocht. Werkt er iets niet? Neem contact met ons op." }
 }
-# 5. Versleuteling
 switch ($EncState) {
     'ok'    { $Done += @{ Icon = $IconOk;   Title = 'Je gegevens zijn versleuteld'; Detail = 'Als je computer kwijtraakt, kan niemand bij je bestanden.' } }
     'busy'  { $Done += @{ Icon = $IconBusy; Title = 'Versleuteling wordt ingesteld'; Detail = 'Dit gebeurt automatisch op de achtergrond. Je hoeft niets te doen.' } }
@@ -251,7 +227,7 @@ if ($Todo.Count -eq 0) {
     $Todo += @{ Title = 'Je kan direct aan de slag'; Detail = 'Er hoeft niets meer te gebeuren.' }
 }
 
-# === HTML opbouwen ===============================================
+### HTML opbouwen ###
 $Logo = if (Test-Path $LogoPath) {
     "<img src=`"data:image/png;base64,$([Convert]::ToBase64String([IO.File]::ReadAllBytes($LogoPath)))`" alt=`"Connectium`" class=`"logo`">"
 } else { '<span class="wordmark">CONNECTIUM</span>' }
@@ -268,15 +244,14 @@ $TodoHtml = ($Todo | ForEach-Object {
     "<li class=`"todo`"><span class=`"num`">$i</span><div><strong>$($_.Title)</strong><span>$($_.Detail)</span></div></li>"
 }) -join "`n"
 
-# Hulpblok: C-label (uit WinPE, of de computernaam als die er een is), anders het serienummer
 $HelpLabel = if ($DeployCLabel) { $DeployCLabel } elseif ($ComputerName -match $LabelPattern) { $ComputerName } else { '' }
-$HelpAsk   = if ($HelpLabel) { 'Noem je C-label, dan helpen we je sneller.' } else { 'Noem je serienummer, dan helpen we je sneller.' }
+$HelpAsk   = if ($HelpLabel) { 'Noem je C-label, dan kunnen we je sneller helpen.' } else { 'Noem je serienummer, dan kunnen we je sneller helpen.' }
 $HelpRight = if ($HelpLabel) { "<span class=`"k`">C-label</span><span class=`"v`">$(Enc $HelpLabel)</span><span class=`"s`">Serienummer $(Enc $Serial)</span>" }
              else { "<span class=`"k`">Serienummer</span><span class=`"v`">$(Enc $Serial)</span>" }
 $PhoneHref = Enc (($HelpPhone -replace '\(0\)', '') -replace '[^\d+]', '')
 $Intro     = 'Je computer is ingericht en bijgewerkt. Hieronder zie je wat we hebben gedaan en wat je nog moet doen.'
 
-$TechPairs = New-Object System.Collections.ArrayList   # ook naar JSON voor het rapportvenster
+$TechPairs = New-Object System.Collections.ArrayList
 function Row([string]$k, [string]$v) {
     [void]$TechPairs.Add([ordered]@{ k = [System.Net.WebUtility]::HtmlDecode($k); v = [System.Net.WebUtility]::HtmlDecode(($v -replace '<[^>]+>', '')) })
     "<div><dt>$k</dt><dd>$v</dd></div>"
@@ -408,7 +383,7 @@ $TodoHtml
 <section class="help" aria-label="Hulp nodig">
 <div>
 <h3>Hulp nodig?</h3>
-<p>Bel <a href="tel:$PhoneHref">$(Enc $HelpPhone)</a> of mail <a href="mailto:$(Enc $HelpMail)">$(Enc $HelpMail)</a>. $(Enc $HelpAsk)</p>
+<p>Bel <a href="tel:$PhoneHref">$(Enc $HelpPhone)</a> of mail <a href="mailto:$(Enc $HelpMail)">$(Enc $HelpMail)</a>.<br>$(Enc $HelpAsk)</p>
 </div>
 <div class="lbl">$HelpRight</div>
 </section>
@@ -447,11 +422,9 @@ $DevHtml
 </html>
 "@
 
-# UTF-8 zonder problemen in elke browser
 [IO.File]::WriteAllText($OutFile, $Html, (New-Object System.Text.UTF8Encoding($true)))
 Write-Host "Rapport geschreven: $OutFile"
 
-# Zelfde inhoud als JSON voor het rapportvenster in de popup (Start-UpdatePopup.ps1)
 function Plain([string]$s) { [System.Net.WebUtility]::HtmlDecode(($s -replace '<[^>]+>', '')) }
 function IconKind($i) { if ($i -eq $IconOk) { 'ok' } elseif ($i -eq $IconBusy) { 'busy' } else { 'info' } }
 $Json = [ordered]@{
@@ -470,7 +443,7 @@ $Json = [ordered]@{
 $JsonFile = [IO.Path]::ChangeExtension($OutFile, '.json')
 [IO.File]::WriteAllText($JsonFile, ($Json | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 
-# === Openen in Edge voor de aangemelde gebruiker ==================
+### Openen in Edge ###
 function Open-ReportForUser([string]$Path) {
     $Edge = @(
         "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
@@ -483,9 +456,6 @@ function Open-ReportForUser([string]$Path) {
         $Exe = 'explorer.exe'; $Arg = "`"$Path`""
     }
     else {
-        # Rapport openen in een APART, tijdelijk Edge-profiel, InPrivate:
-        # - het echte Edge-profiel van de gebruiker wordt niet aangeraakt (diens eerste start blijft normaal)
-        # - geen aanmelden/synchroniseren-vragen
         $ProfileDir = Join-Path (Split-Path $Path -Parent) 'RapportBrowser'
         New-Item -Path $ProfileDir -ItemType Directory -Force | Out-Null
         if ($IsSystem) { $null = icacls.exe $ProfileDir /grant '*S-1-5-32-545:(OI)(CI)M' /T /Q }
@@ -493,8 +463,6 @@ function Open-ReportForUser([string]$Path) {
         $Arg = "--user-data-dir=`"$ProfileDir`" --inprivate --no-first-run --no-default-browser-check --start-maximized `"$Path`""
     }
 
-    # Edge-welkomstwizard tijdelijk uitzetten (machinebeleid HideFirstRunExperience).
-    # Alleen als het beleid nog niet bestaat; daarna weer verwijderd. Edge leest het alleen bij het starten.
     $PolicyKey   = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
     $PolicyAdded = $false
     if ($Edge -and $IsSystem) {
@@ -509,20 +477,18 @@ function Open-ReportForUser([string]$Path) {
     try {
         if (-not $IsSystem) { Start-Process -FilePath $Exe -ArgumentList $Arg; Start-Sleep -Seconds 15; return }
 
-        # Als SYSTEM: via een tijdelijke taak in de sessie van de aangemelde gebruiker (groep Users, SID)
         $TaskName  = 'Connectium-OpenInstallReport'
         $Action    = New-ScheduledTaskAction -Execute $Exe -Argument $Arg
         $Principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
-        $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries   # ook op accu
+        $Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
         Register-ScheduledTask -TaskName $TaskName -Action $Action -Principal $Principal -Settings $Settings -Force | Out-Null
         Start-ScheduledTask -TaskName $TaskName
-        Start-Sleep -Seconds 20   # Edge laten starten (en het beleid laten inlezen)
+        Start-Sleep -Seconds 20
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
     }
     finally {
         if ($PolicyAdded) {
             Remove-ItemProperty -Path $PolicyKey -Name HideFirstRunExperience -ErrorAction SilentlyContinue
-            # Lege beleidssleutel opruimen als wij die hebben aangemaakt en er verder niets in staat
             $Key = Get-Item -Path $PolicyKey -ErrorAction SilentlyContinue
             if ($Key -and $Key.ValueCount -eq 0 -and $Key.SubKeyCount -eq 0) { Remove-Item -Path $PolicyKey -Force -ErrorAction SilentlyContinue }
         }

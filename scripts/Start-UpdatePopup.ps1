@@ -1,34 +1,18 @@
 <#
 .SYNOPSIS
-    Connectium update-popup: tweede Windows Update-ronde bij de eerste aanmelding,
-    met een nette popup voor de gebruiker en daarna het opleverrapport.
-
-.DESCRIPTION
-    Twee rollen in een script, die via bestanden in C:\ProgramData\Connectium\Popup samenwerken:
-
-    -Worker  (draait als SYSTEM, gestart door FirstLogon.ps1)
-             Zoekt updates, deelt ze in 4 categorieen in en installeert ze in vaste volgorde:
-               1. Beveiligingsupdates   2. Defender-updates   3. Stuurprogramma-updates   4. Overige Windows-updates
-             Schrijft de voortgang naar status.json, stopt netjes als de gebruiker afbreekt,
-             maakt daarna het opleverrapport klaar.
-
-    -Ui      (draait als de aangemelde gebruiker)
-             Toont de popup rechtsonder (WPF), leest status.json, schrijft cancel.flag bij afbreken,
-             opent het opleverrapport in Edge.
-
+    Connectium update-popup: tweede Windows Update-ronde en opleverrapport bij de eerste aanmelding.
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.19.18
-    Bestand is bewust ASCII: niet-ASCII tekst staat als HTML-entity en wordt via T() omgezet.
+    Versie: 2026.10.20.02
 #>
 
 param(
     [switch]$Worker,
     [switch]$Ui,
-    [switch]$ReportOnly    # alleen het rapportvenster tonen (testen, of later nog eens bekijken)
+    [switch]$ReportOnly
 )
 
-# === Gedeelde instellingen ======================================
+### Gedeelde instellingen ###
 $Script:PopupDir   = 'C:\ProgramData\Connectium\Popup'
 $Script:StatusFile = Join-Path $Script:PopupDir 'status.json'
 $Script:CancelFlag = Join-Path $Script:PopupDir 'cancel.flag'
@@ -50,7 +34,6 @@ function Write-PopupLog([string]$Msg, [string]$Level = 'INFO') {
         "[{0}] [{1}] [{2}] {3}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $(if ($Worker) { 'Worker' } else { 'UI' }), $Msg |
             Out-File -FilePath $Script:LogFile -Append -Encoding utf8 -ErrorAction Stop
     } catch {
-        # Gebruiker mag het SYSTEM-log niet schrijven: dan in de uitwisselmap (Users: wijzigen)
         try {
             "[{0}] [{1}] [UI] {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $Msg |
                 Out-File -FilePath (Join-Path $Script:PopupDir 'Ui.log') -Append -Encoding utf8 -ErrorAction Stop
@@ -58,15 +41,13 @@ function Write-PopupLog([string]$Msg, [string]$Level = 'INFO') {
     }
 }
 
-# =================================================================
-#  WORKER (SYSTEM)
-# =================================================================
+### Worker (SYSTEM) ###
 
-# Microsoft update-classificaties (vaste ID's, ook op een Nederlandse Windows)
-$Script:CatSecurity   = '0fa1201d-4330-4fa8-8ae9-b877473b6441'   # Security Updates
-$Script:CatCritical   = 'e6cf1350-c01b-414d-a61f-263d14d133b4'   # Critical Updates
-$Script:CatDefinition = 'e0789628-ce08-4437-be74-2495b842f43b'   # Definition Updates
-$Script:CatDrivers    = 'ebfc1fc5-71a4-4f7b-9aca-3b9a503104a0'   # Drivers
+### Microsoft update-classificaties (vaste ID's, ook op een Nederlandse Windows) ###
+$Script:CatSecurity   = '0fa1201d-4330-4fa8-8ae9-b877473b6441'
+$Script:CatCritical   = 'e6cf1350-c01b-414d-a61f-263d14d133b4'
+$Script:CatDefinition = 'e0789628-ce08-4437-be74-2495b842f43b'
+$Script:CatDrivers    = 'ebfc1fc5-71a4-4f7b-9aca-3b9a503104a0'
 
 $Script:Groups = @(
     @{ Key = 'security'; Label = 'Beveiligingsupdates' }
@@ -123,7 +104,6 @@ function Write-Status([hashtable]$Status) {
 }
 
 function Set-EdgeFirstRunPolicy([bool]$Enable) {
-    # Edge-welkomstwizard tijdelijk uit, alleen als wij het beleid zelf zetten
     $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
     if ($Enable) {
         $existing = (Get-ItemProperty -Path $key -Name HideFirstRunExperience -ErrorAction SilentlyContinue).HideFirstRunExperience
@@ -148,20 +128,17 @@ function Start-Worker {
     }
     Write-Status $status
 
-    # --- Zoeken + installeren, in rondes ---
-    # Na het installeren van een basisdriver biedt Windows Update vaak nog extensies of
-    # onderdelen aan, en een eerste mislukte driver lukt bij een tweede poging meestal wel.
-    # Daarom opnieuw zoeken tot er niets nieuws meer is (max $MaxPasses rondes).
+    ### Zoeken en installeren ###
     $MaxPasses = 3
     $order     = @{ security = 0; defender = 1; driver = 2; other = 3 }
-    $Attempts  = @{}   # UpdateID -> aantal pogingen
-    $Final     = @{}   # UpdateID -> $true (gelukt) / $false (mislukt)
+    $Attempts  = @{}
+    $Final     = @{}
     $session   = $null; $searcher = $null
 
     for ($pass = 1; $pass -le $MaxPasses; $pass++) {
         if (Test-Path $Script:CancelFlag) { break }
 
-        # Zoeken
+        ### Zoeken ###
         $updates = @()
         try {
             if (-not $session) {
@@ -189,14 +166,12 @@ function Start-Worker {
         }
         $status.rescan = $false
 
-        # Alleen nieuwe updates, of eerder mislukte voor een tweede poging
         $updates = @($updates | Where-Object { -not $Attempts.ContainsKey($_.Identity.UpdateID) -or ($Final[$_.Identity.UpdateID] -eq $false -and $Attempts[$_.Identity.UpdateID] -lt 2) })
         if ($updates.Count -eq 0) { Write-PopupLog "Ronde ${pass}: niets nieuws, klaar."; break }
 
-        # Indelen en sorteren
+        ### Indelen en sorteren ###
         $plan = @($updates | ForEach-Object {
             $g = Get-UpdateGroup $_
-            # Binnen Defender: platform voor definities
             $sub = if ($g -eq 'defender' -and $_.Title -match 'beveiligingsinformatie|Security Intelligence|KB2267602') { 1 } else { 0 }
             [pscustomobject]@{ Update = $_; Group = $g; Order = $order[$g]; Sub = $sub; Name = (Get-FriendlyName $_ $g) }
         } | Sort-Object Order, Sub)
@@ -204,13 +179,13 @@ function Start-Worker {
         foreach ($grp in $status.groups) {
             $k = $grp.key; $extra = @($plan | Where-Object { $_.Group -eq $k }).Count
             $grp.total += $extra
-            if ($grp.total -eq 0) { $grp.state = 'none' }          # niets nodig = in orde (groen vinkje)
+            if ($grp.total -eq 0) { $grp.state = 'none' }
             elseif ($extra -gt 0) { $grp.state = 'pending' }
         }
         $status.total += $plan.Count
         foreach ($p in $plan) { Write-PopupLog (" - [{0}] {1}" -f $p.Group, $p.Update.Title) }
 
-        # Installeren
+        ### Installeren ###
         $status.stage = 'install'
         foreach ($p in $plan) {
             if (Test-Path $Script:CancelFlag) { $status.skipped = $true; Write-PopupLog 'Afgebroken door gebruiker.'; break }
@@ -255,15 +230,12 @@ function Start-Worker {
         if ($status.skipped) { break }
     }
 
-    # Telling: een update die bij de tweede poging lukte telt als gelukt
     $status.failed = @($Final.Values | Where-Object { $_ -eq $false }).Count
     $status.ok     = @($Final.Values | Where-Object { $_ -eq $true }).Count
     foreach ($g in $status.groups) { if ($g.total -eq 0) { $g.state = 'none' } elseif ($g.done -ge $g.total) { $g.state = 'done' } elseif ($g.state -eq 'active') { $g.state = 'pending' } }
     if ((Test-Path $Script:CancelFlag) -and $status.installed -lt $status.total) { $status.skipped = $true }
 
-    # --- Afronden: rapport klaarzetten ---
-    # Het afrondscherm toont de eindstand (alle vinkjes) terwijl het rapport gemaakt wordt;
-    # minimaal 3 seconden, zodat de vinkjes even te zien zijn.
+    ### Afronden: rapport klaarzetten ###
     if ($status.stage -ne 'error') { $status.stage = 'finishing' }
     $status.current = ''
     Write-Status $status
@@ -290,7 +262,7 @@ function Start-Worker {
             Write-PopupLog ("Rapport gemaakt in {0:N1} s." -f ((Get-Date) - $finStart).TotalSeconds)
             if (Test-Path $Script:ReportHtml) {
                 New-Item -Path $Script:EdgeProfile -ItemType Directory -Force | Out-Null
-                $null = icacls.exe $Script:EdgeProfile /grant '*S-1-5-32-545:(OI)(CI)M' /Q   # erft door; geen /T over een bestaand Edge-profiel
+                $null = icacls.exe $Script:EdgeProfile /grant '*S-1-5-32-545:(OI)(CI)M' /Q
                 $policyAdded = Set-EdgeFirstRunPolicy $true
                 $status.reportReady = $true
                 Write-PopupLog 'Opleverrapport klaargezet.'
@@ -304,7 +276,7 @@ function Start-Worker {
     Write-Status $status
     Write-PopupLog "Klaar: $($status.message)"
 
-    # --- Wachten tot het rapport geopend of de popup gesloten is (max 30 min), dan Edge-beleid opruimen ---
+    ### Edge-beleid opruimen ###
     if ($policyAdded) {
         $deadline = (Get-Date).AddMinutes(30)
         while ((Get-Date) -lt $deadline) {
@@ -318,20 +290,15 @@ function Start-Worker {
     Write-PopupLog '--- Worker klaar ---'
 }
 
-# =================================================================
-#  UI (gebruiker)
-# =================================================================
+### UI (gebruiker) ###
 function Start-Ui {
     Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
 
-    # Eigen taakbalk-ID: niet groeperen onder PowerShell, zodat ons eigen pictogram getoond wordt
     try {
         Add-Type -Namespace Cx -Name App -MemberDefinition '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string id);'
         [void][Cx.App]::SetCurrentProcessExplicitAppUserModelID('Connectium.UpdatePopup')
     } catch {}
 
-    # Voornaam voor een persoonlijke aanhef ("Elco Kuipers | Videra B.V." -> "Elco").
-    # Geen naam bekend, of alleen de accountnaam (lokaal account zonder volledige naam)? Dan zonder naam.
     $FirstName = ''
     try {
         $lui = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI' -ErrorAction Stop
@@ -462,13 +429,12 @@ function Start-Ui {
     $conv = New-Object System.Windows.Media.BrushConverter
     function B([string]$hex) { $conv.ConvertFromString($hex) }
 
-    # Logo
+    ### Logo ###
     $bmp = $null
     if (Test-Path $Script:LogoPath) {
         $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
         $bmp.BeginInit(); $bmp.UriSource = New-Object System.Uri($Script:LogoPath); $bmp.CacheOption = 'OnLoad'; $bmp.EndInit()
         $c.Logo.Source = $bmp
-        # Taakbalkpictogram: het C-beeldmerk (linkerdeel van het logo) i.p.v. het PowerShell-pictogram
         try {
             $side = [Math]::Min($bmp.PixelWidth, [int]($bmp.PixelHeight * 1.04))
             $win.Icon = New-Object System.Windows.Media.Imaging.CroppedBitmap($bmp, (New-Object System.Windows.Int32Rect(0, 0, $side, $bmp.PixelHeight)))
@@ -476,7 +442,6 @@ function Start-Ui {
     } else { $c.Logo.Visibility = 'Collapsed'; $c.LogoText.Visibility = 'Visible' }
     $c.TxtHelp.Text = "Hulp nodig?`n$Script:HelpPhone"
 
-    # Detailregels (4 vaste categorieen)
     $rows = @{}
     foreach ($g in $Script:Groups) {
         $grid = New-Object System.Windows.Controls.Grid
@@ -510,7 +475,7 @@ function Start-Ui {
             default   { $row.Icon.Background = (B '#FFFFFF'); $row.Icon.BorderBrush = (B '#D5DAE1'); $row.Glyph.Text = '' }
         }
         $row.Label.Foreground = (B '#26324A')
-        $row.Meta.Text = if ($state -eq 'pending' -and $total -eq 0) { '' }   # nog aan het zoeken
+        $row.Meta.Text = if ($state -eq 'pending' -and $total -eq 0) { '' }
                          elseif ($total -eq 0) { 'Up-to-date' }
                          elseif ($state -eq 'active') { "$done van $total" }
                          elseif ($total -eq 1) { '1 update' } else { "$total updates" }
@@ -549,7 +514,7 @@ function Start-Ui {
                 Set-Icon 0xE896 '#EAF0F8' '#24508A'
                 $n = [Math]::Min($s.installed + 1, $s.total)
                 $c.TxtTitle.Text = 'Updates installeren'
-                $c.TxtBody.Text = "$n van $($s.total) updates. Je kan ondertussen je computer nog gewoon gebruiken."
+                $c.TxtBody.Text = "$n van $($s.total) updates."
                 $pct = if ($s.total) { [int]([Math]::Round($s.installed / $s.total * 100)) } else { 0 }
                 $c.TxtCurrent.Text = if ($s.rescan) { T 'Controleren op extra updates&hellip;' } elseif ($s.current) { "Nu bezig: $($s.current)" } else { '' }; $c.TxtPercent.Text = "$pct%"
                 $c.Fill.Margin = (New-Object System.Windows.Thickness(0)); $c.Fill.Width = [Math]::Max(0, $c.Track.ActualWidth * $pct / 100)
@@ -603,8 +568,6 @@ function Start-Ui {
         } catch { Write-PopupLog "Rapport openen mislukt: $($_.Exception.Message)" 'ERROR' }
     }
 
-    # Rapportvenster in popupstijl. Inhoud uit Installatierapport.json (New-InstallReport.ps1).
-    # Technische details blijven in de HTML (link onderaan, opent Edge).
     function Show-ReportWindow($r) {
         [xml]$rx = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -721,10 +684,9 @@ function Start-Ui {
 
         if ($bmp) { $f.RLogo.Source = $bmp } else { $f.RLogo.Visibility = 'Collapsed'; $f.RLogoText.Visibility = 'Visible' }
         if ($win.Icon) { $rw.Icon = $win.Icon }
-        # Venster altijd binnen het bureaublad (boven de taakbalk); bij uitklappen scrolt de inhoud
         $wa = [System.Windows.SystemParameters]::WorkArea
         $rw.MaxHeight = $wa.Height - 16
-        $f.RScroll.MaxHeight = $rw.MaxHeight - 200   # kop + knoppenbalk + marges blijven zichtbaar
+        $f.RScroll.MaxHeight = $rw.MaxHeight - 200
         $rw.Add_SizeChanged({
             $wa = [System.Windows.SystemParameters]::WorkArea
             $top = $wa.Top + ($wa.Height - $rw.ActualHeight) / 2
@@ -734,7 +696,6 @@ function Start-Ui {
         $f.RGreeting.Text = [string]$r.greeting
         $f.RIntro.Text    = [string]$r.intro
 
-        # Wat we hebben gedaan: rondje met vinkje / klok / i + titel + toelichting
         foreach ($d in @($r.done)) {
             $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,4,0,4'
             $c0 = New-Object System.Windows.Controls.ColumnDefinition; $c0.Width = 'Auto'; $g.ColumnDefinitions.Add($c0)
@@ -756,7 +717,6 @@ function Start-Ui {
             $f.RDone.Children.Add($g) | Out-Null
         }
 
-        # Wat je nog moet doen: genummerd
         $i = 0
         foreach ($t in @($r.todo)) {
             $i++
@@ -774,9 +734,8 @@ function Start-Ui {
             $f.RTodo.Children.Add($g) | Out-Null
         }
 
-        # Hulp: telefoon/mail + C-label (of serienummer als er geen C-label is)
-        $ask = if ([string]$r.ask) { [string]$r.ask } elseif ([string]$r.clabel) { 'Noem je C-label, dan helpen we je sneller.' } else { 'Noem je serienummer, dan helpen we je sneller.' }
-        $f.RHelp.Text = "Bel $($r.phone) of mail $($r.mail). $ask"
+        $ask = if ([string]$r.ask) { [string]$r.ask } elseif ([string]$r.clabel) { 'Noem je C-label, dan kunnen we je sneller helpen.' } else { 'Noem je serienummer, dan kunnen we je sneller helpen.' }
+        $f.RHelp.Text = "Bel $($r.phone) of mail $($r.mail).`n$ask"
         if ([string]$r.clabel) {
             $f.RLabel.Text = [string]$r.clabel; $f.RSerial.Text = "Serienummer $($r.serial)"
         } else {
@@ -786,7 +745,6 @@ function Start-Ui {
         $f.Header.Add_MouseLeftButtonDown({ try { $rw.DragMove() } catch {} })
         $f.RBtnX.Add_Click({ $rw.Close() })
         $f.RBtnClose.Add_Click({ $rw.Close() })
-        # Technische details: uitklapbaar in het venster; volledige HTML (met updates) via link
         $first = $true
         foreach ($t in @($r.tech)) {
             $g = New-Object System.Windows.Controls.Grid; $g.Margin = '0,6,0,0'
@@ -833,14 +791,14 @@ function Start-Ui {
                 return
             } catch {
                 Write-PopupLog "Rapportvenster: $($_.Exception.Message)" 'WARN'
-                if ($Script:ReportShown) { return }   # venster was al open: geen Edge erachteraan
+                if ($Script:ReportShown) { return }
                 try { $win.Show() } catch {}
             }
         }
         Open-ReportInEdge
     }
 
-    # --- Knoppen ---
+    ### Knoppen ###
     $c.BtnHide.Add_Click({ $win.WindowState = 'Minimized' })
     $c.BtnDetails.Add_Click({ $ui.detailsOpen = -not $ui.detailsOpen; Update-View })
     $c.BtnSecondary.Add_Click({
@@ -862,17 +820,15 @@ function Start-Ui {
     $c.BtnPrimary.Add_Click({
         $stage = if ($ui.local) { $ui.local } elseif ($ui.status) { $ui.status.stage } else { 'search' }
         if ($stage -eq 'confirm') { $ui.local = $null; Update-View }
-        elseif ($stage -eq 'done') { Open-Report; $ui.allowClose = $true; $win.Close() }   # rapport open = popup klaar
+        elseif ($stage -eq 'done') { Open-Report; $ui.allowClose = $true; $win.Close() }
     })
 
-    # Sluiten tijdens updates = verbergen (updates gaan door)
     $win.Add_Closing({
         param($sender, $e)
         if (-not $ui.allowClose) { $e.Cancel = $true; $win.WindowState = 'Minimized' }
         else { New-Item -Path $Script:ClosedFlag -ItemType File -Force -ErrorAction SilentlyContinue | Out-Null }
     })
 
-    # Rechtsonder op het scherm houden
     $place = {
         $wa = [System.Windows.SystemParameters]::WorkArea
         $win.Left = $wa.Right - $win.ActualWidth
@@ -881,19 +837,17 @@ function Start-Ui {
     $win.Add_SizeChanged($place)
     $win.Add_Loaded($place)
 
-    # --- Status lezen (elke 0,5 s) ---
+    ### Status lezen ###
     $poll = New-Object System.Windows.Threading.DispatcherTimer
     $poll.Interval = [TimeSpan]::FromMilliseconds(500)
     $poll.Add_Tick({
         try {
             if (Test-Path $Script:StatusFile) {
                 $ui.status = Get-Content -Path $Script:StatusFile -Raw -ErrorAction Stop | ConvertFrom-Json
-                # Lokale tussenstand loslaten zodra de worker verder is
                 if ($ui.local -eq 'skipping' -and $ui.status.stage -in 'done', 'error') { $ui.local = $null }
                 if ($ui.local -eq 'confirm' -and $ui.status.stage -in 'finishing', 'done', 'error') { $ui.local = $null }
             }
             elseif (((Get-Date) - $ui.started).TotalMinutes -gt 10) {
-                # Geen worker-status na 10 minuten: netjes afsluiten in plaats van eindeloos zoeken
                 $ui.status = [pscustomobject]@{ stage = 'error'; reportReady = $false
                     message = 'Er kon niet naar updates worden gezocht. Windows probeert het later vanzelf opnieuw.' }
             }
@@ -901,7 +855,7 @@ function Start-Ui {
         Update-View
     })
 
-    # --- Bewegende balk tijdens zoeken/afronden ---
+    ### Animatie ###
     $anim = New-Object System.Windows.Threading.DispatcherTimer
     $anim.Interval = [TimeSpan]::FromMilliseconds(30)
     $anim.Add_Tick({
@@ -921,8 +875,6 @@ function Start-Ui {
     Write-PopupLog 'Popup getoond.'
     if ($ReportOnly) { Open-Report; return }
 
-    # Niet tonen zolang Windows Hello / ESP (CloudExperienceHost) op de voorgrond staat.
-    # Gemeten vanuit de sessie van de gebruiker; achtergrondprocessen tellen niet mee. Max 20 min.
     try {
         Add-Type -Namespace Cx -Name Fg -MemberDefinition @'
 [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
@@ -944,7 +896,6 @@ function Start-Ui {
     Write-PopupLog 'Popup gesloten.'
 }
 
-# =================================================================
 if ($Worker) { Start-Worker }
 elseif ($Ui -or $ReportOnly) { Start-Ui }
 else { Write-Host 'Gebruik: Start-UpdatePopup.ps1 -Worker (als SYSTEM), -Ui of -ReportOnly (als gebruiker).' }

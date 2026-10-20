@@ -1,14 +1,6 @@
 <#
 .SYNOPSIS
     Single-File Hybrid Windows Update Solution with LIVE RMM LOGGING.
-
-.DESCRIPTION
-    - Native: Uses built-in WUA COM API — no PSWindowsUpdate module required.
-    - Context: Seamless System-to-User transition via ServiceUI.
-    - UI: Fullscreen English WinForms GUI.
-    - Exit 3010: Signals reboot required. In Intune/AutoPilot, Intune handles the reboot
-      and resumes the ESP session automatically — do NOT use -AutoReboot in that context.
-      Use -AutoReboot only for standalone RMM deployments outside of Intune.
 #>
 
 param(
@@ -21,14 +13,13 @@ param(
     [switch]$AutoReboot
 )
 
-# === Globals ===
+### Globals ###
 $Global:LogDir       = "C:\ProgramData\Scripts\WindowsUpdates"
 $Global:ToolsBaseUrl = "https://github.com/QuadNL/scripts/raw/9796203051aae195c8c7e2f11752135df6ab0b45/Install-OSUpdates"
 $Global:LogFile      = Join-Path $Global:LogDir "LiveOutput.log"
 $Global:WrapperLog   = Join-Path $Global:LogDir "Wrapper.log"
 
-
-# === Logger ===
+### Logger ###
 function Write-Log {
     param([string]$Msg, [string]$Type="INFO")
     if (-not (Test-Path $Global:LogDir)) { New-Item -ItemType Directory -Path $Global:LogDir -Force | Out-Null }
@@ -42,7 +33,7 @@ function Write-Log {
     }
 }
 
-# === Tool Helper ===
+### Tool Helper ###
 function Get-Tool {
     param([string]$FileName)
     $LocalPath = Join-Path $Global:LogDir $FileName
@@ -59,7 +50,7 @@ function Get-Tool {
     return $LocalPath
 }
 
-# === PowerShell Path Resolver ===
+### PowerShell Path Resolver ###
 function Get-PowerShellExePath {
     $candidates = @(
         "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe",
@@ -69,9 +60,8 @@ function Get-PowerShellExePath {
     return "powershell.exe"
 }
 
-# === WUA COM API Helpers ===
+### WUA COM API Helpers ###
 function New-WUASession {
-    # Register Microsoft Update service so drivers and Office updates are included
     try {
         $Svc = New-Object -ComObject Microsoft.Update.ServiceManager
         $Svc.AddService2("7971f918-a847-4430-9279-4a52d1efe18d", 7, "") | Out-Null
@@ -85,7 +75,7 @@ function Search-WUAUpdates {
     $Searcher = $Session.CreateUpdateSearcher()
     try {
         $Searcher.ServiceID     = "7971f918-a847-4430-9279-4a52d1efe18d"
-        $Searcher.ServerSelection = 3  # ssOthers (Microsoft Update)
+        $Searcher.ServerSelection = 3
     } catch {}
 
     $Results = $Searcher.Search("IsInstalled=0 and BrowseOnly=0")
@@ -134,7 +124,6 @@ function Install-WUAUpdate {
                         & $OnProgress "Downloading" $Pct
                     }
                 } catch {}
-                # Poll every 100ms with DoEvents so the UI stays scrollable
                 for ($s = 0; $s -lt 5; $s++) {
                     [System.Windows.Forms.Application]::DoEvents()
                     Start-Sleep -Milliseconds 100
@@ -160,7 +149,6 @@ function Install-WUAUpdate {
                     & $OnProgress "Installing" $Pct
                 }
             } catch {}
-            # Poll every 100ms with DoEvents so the UI stays scrollable
             for ($s = 0; $s -lt 5; $s++) {
                 [System.Windows.Forms.Application]::DoEvents()
                 Start-Sleep -Milliseconds 100
@@ -179,7 +167,7 @@ function Install-WUAUpdate {
     return $Result
 }
 
-# === GUI Payload (User Context) ===
+### GUI Payload (User Context) ###
 function Start-UpdateGUI {
     $MarkerFile = Join-Path $Global:LogDir "OOBE_Updates_Completed.tag"
 
@@ -199,7 +187,7 @@ function Start-UpdateGUI {
     $Script:CountdownSecs   = 10
     $Script:Countdown       = 10
 
-    # Form
+    ### Form ###
     $Form = New-Object System.Windows.Forms.Form
     $Form.Text            = "System Management"
     $Form.WindowState     = "Maximized"
@@ -282,7 +270,6 @@ function Start-UpdateGUI {
     $Form.Add_Load({   $LogBox.Height = $ContentPanel.Height - $BottomPanel.Height - 20 })
     $Form.Add_Resize({ $LogBox.Height = $ContentPanel.Height - $BottomPanel.Height - 20 })
 
-    # Logger — DoEvents() keeps the UI responsive between log lines
     $Script:Logger = {
         param($Msg)
         [System.Windows.Forms.Application]::DoEvents()
@@ -302,8 +289,6 @@ function Start-UpdateGUI {
         $Line | Out-File -FilePath $Global:LogFile -Append -Encoding utf8
     }
 
-    # All WUA work runs here — on the UI thread, inside Application.Run's message pump.
-    # DoEvents() is called every 100ms inside Install-WUAUpdate, so scrolling always works.
     $Form.Add_Shown({
         [System.Windows.Forms.Application]::DoEvents()
         try {
@@ -383,7 +368,6 @@ function Start-UpdateGUI {
         $Bar.Maximum       = 100
         $Bar.Value         = 0
 
-        # Countdown via WinForms Timer — non-blocking, scroll still works during countdown
         $Script:CountdownSecs = if ($Script:RebootNeeded -and $AutoReboot) { 15 } else { 10 }
         $Script:Countdown     = $Script:CountdownSecs
 
@@ -408,7 +392,6 @@ function Start-UpdateGUI {
 
     [System.Windows.Forms.Application]::Run($Form)
 
-    # Post-close — form is gone, use Write-Log only
     if (-not $ScanOnly) {
         $StatusText = if ($Script:AnyErrors) { "Completed with errors" } else { "Success" }
         Set-Content -Path $MarkerFile -Value "Script finished at $(Get-Date). Status: $StatusText. User: $env:USERNAME" -Force
@@ -421,9 +404,9 @@ function Start-UpdateGUI {
     exit 0
 }
 
-# === Silent Payload (System Context) ===
+### Silent Payload (System Context) ###
 function Start-SilentLogic {
-    Add-Type -AssemblyName System.Windows.Forms   # nodig voor DoEvents() in Install-WUAUpdate
+    Add-Type -AssemblyName System.Windows.Forms
     Write-Log "Starting Silent Mode Logic."
     try {
         $WUASession = New-WUASession
@@ -473,7 +456,7 @@ function Start-SilentLogic {
     }
 }
 
-# === Main Wrapper Logic (Live Logging Bridge) ===
+### Main Wrapper Logic (Live Logging Bridge) ###
 function Start-WrapperLogic {
     Write-Log "--- SCRIPT START ---"
 
