@@ -1,8 +1,8 @@
 # OSDCloud Deployment Script met GUI
-# Versie: v2 (OSDCloud-module / Deploy-OSDCloud) - TEST
+# Versie: v2 (OSDCloud-module / Deploy-OSDCloud)
 # Auteur: Connectium B.V. / E. Beverdam
 
-Write-Host -ForegroundColor Green "Version 2026.10.21.v2-test14"
+Write-Host -ForegroundColor Green "Version 2026.10.21.v2"
 
 ### Workaround OSD HP-datum (nl-NL) ###
 [System.Threading.Thread]::CurrentThread.CurrentCulture   = 'en-US'
