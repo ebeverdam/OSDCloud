@@ -2,7 +2,7 @@
 # Versie: v2 (OSDCloud-module / Deploy-OSDCloud) - TEST
 # Auteur: Connectium B.V. / E. Beverdam
 
-Write-Host -ForegroundColor Green "Version 2026.10.20.v2-test12"
+Write-Host -ForegroundColor Green "Version 2026.10.21.v2-test14"
 
 ### Workaround OSD HP-datum (nl-NL) ###
 [System.Threading.Thread]::CurrentThread.CurrentCulture   = 'en-US'
@@ -296,7 +296,7 @@ $DeployCommon = @{
     Force        = $true
     PostAction   = 'Quit'
     OSEdition    = 'Pro'
-    OSActivation = 'Volume'
+    OSActivation = 'Retail'
 }
 
 ### Stap 3: Installatie ###
@@ -487,6 +487,7 @@ if ($LASTEXITCODE -ne 0 -or $Interfaces -notmatch '(?i)(Name|Naam)\s*:') {
 Log "Verbinden met '$SSID'..."
 $null = netsh wlan delete profile name="$SSID" 2>&1
 $null = netsh wlan add profile filename="$ProfilePath" user=all 2>&1
+$null = netsh wlan set profileparameter name="$SSID" connectionmode=auto 2>&1
 $null = netsh wlan connect name="$SSID" ssid="$SSID" 2>&1
 
 for ($i = 1; $i -le 20; $i++) {
