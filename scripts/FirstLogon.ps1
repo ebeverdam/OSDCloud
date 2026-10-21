@@ -3,7 +3,7 @@
     Connectium: eenmalige Windows Update-ronde met popup + opleverrapport bij de eerste aanmelding.
 .NOTES
     Auteur: Connectium B.V. / E. Beverdam
-    Versie: 2026.10.20.01
+    Versie: 2026.10.21.01
 #>
 
 param(
@@ -89,6 +89,21 @@ $Setup = Get-ItemProperty 'HKLM:\SYSTEM\Setup' -ErrorAction SilentlyContinue
 if ($Setup.OOBEInProgress -eq 1 -or $Setup.SystemSetupInProgress -eq 1) {
     Log 'OOBE is nog bezig: overslaan, de taak blijft staan voor de volgende aanmelding.'
     exit 0
+}
+
+### Gasten-WiFi ###
+function Test-Internet {
+    try { (Invoke-WebRequest -Uri 'http://www.msftconnecttest.com/connecttest.txt' -UseBasicParsing -TimeoutSec 5).Content -match 'Microsoft Connect Test' }
+    catch { $false }
+}
+$null = netsh.exe wlan show profiles name="$GuestSSID" 2>&1
+if ($LASTEXITCODE -eq 0) {
+    $null = netsh.exe wlan set profileparameter name="$GuestSSID" connectionmode=auto 2>&1
+    if (-not (Test-Internet)) {
+        Log "Geen internet: opnieuw verbinden met '$GuestSSID'."
+        $null = netsh.exe wlan connect name="$GuestSSID" ssid="$GuestSSID" 2>&1
+        for ($i = 0; $i -lt 10 -and -not (Test-Internet); $i++) { Start-Sleep -Seconds 3 }
+    }
 }
 
 $User = $null
