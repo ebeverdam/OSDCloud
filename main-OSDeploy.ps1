@@ -2,7 +2,7 @@
 # Versie: Definitief
 # Auteur: Connectium B.V. / E. Beverdam
 
-Write-Host -ForegroundColor Green "Version 2026.10.20.01"
+Write-Host -ForegroundColor Green "Version 2026.10.21.01"
 
 ### Workaround OSD HP-datum (nl-NL) ###
 [System.Threading.Thread]::CurrentThread.CurrentCulture   = 'en-US'
@@ -35,52 +35,52 @@ function Show-OSDCloudVersionChoice {
     $title.Size     = New-Object System.Drawing.Size(510, 28)
 
     $body = New-Object System.Windows.Forms.Label
-    $body.Text     = "v1 - Huidige productieversie (OSD / Start-OSDCloud).`n`n" +
-                     "v2 - Nieuwe versie (OSDCloud / Deploy-OSDCloud), TEST.`n" +
-                     "      Installeert na de herstart Windows Updates en drivers."
+    $body.Text     = "v2 - Standaard (OSDCloud / Deploy-OSDCloud).`n" +
+                     "      Installeert na de herstart Windows Updates en drivers.`n`n" +
+                     "v1 - Vorige versie (OSD / Start-OSDCloud)."
     $body.Font     = New-Object System.Drawing.Font('Segoe UI', 10)
     $body.Location = New-Object System.Drawing.Point(20, 60)
     $body.Size     = New-Object System.Drawing.Size(510, 90)
 
-    $btnV1 = New-Object System.Windows.Forms.Button
-    $btnV1.Text         = "v1 - Productie ($Script:ChoiceRemaining)"
-    $btnV1.Font         = New-Object System.Drawing.Font('Segoe UI', 10)
-    $btnV1.Size         = New-Object System.Drawing.Size(240, 50)
-    $btnV1.Location     = New-Object System.Drawing.Point(20, 170)
-    $btnV1.DialogResult = 'Yes'
-    $btnV1.FlatStyle    = 'System'
-
     $btnV2 = New-Object System.Windows.Forms.Button
-    $btnV2.Text         = 'v2 - Nieuw (test)'
+    $btnV2.Text         = "v2 - Standaard ($Script:ChoiceRemaining)"
     $btnV2.Font         = New-Object System.Drawing.Font('Segoe UI', 10)
     $btnV2.Size         = New-Object System.Drawing.Size(240, 50)
-    $btnV2.Location     = New-Object System.Drawing.Point(285, 170)
-    $btnV2.DialogResult = 'No'
+    $btnV2.Location     = New-Object System.Drawing.Point(20, 170)
+    $btnV2.DialogResult = 'Yes'
     $btnV2.FlatStyle    = 'System'
+
+    $btnV1 = New-Object System.Windows.Forms.Button
+    $btnV1.Text         = 'v1 - Vorige versie'
+    $btnV1.Font         = New-Object System.Drawing.Font('Segoe UI', 10)
+    $btnV1.Size         = New-Object System.Drawing.Size(240, 50)
+    $btnV1.Location     = New-Object System.Drawing.Point(285, 170)
+    $btnV1.DialogResult = 'No'
+    $btnV1.FlatStyle    = 'System'
 
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 1000
     $timer.Add_Tick({
         $Script:ChoiceRemaining--
-        $btnV1.Text = "v1 - Productie ($Script:ChoiceRemaining)"
+        $btnV2.Text = "v2 - Standaard ($Script:ChoiceRemaining)"
         if ($Script:ChoiceRemaining -le 0) {
             $timer.Stop()
             $form.DialogResult = 'Yes'
             $form.Close()
         }
     })
-    $form.Add_MouseEnter({ if ($timer.Enabled) { $timer.Stop(); $btnV1.Text = 'v1 - Productie' } })
+    $form.Add_MouseEnter({ if ($timer.Enabled) { $timer.Stop(); $btnV2.Text = 'v2 - Standaard' } })
 
-    $form.Controls.AddRange(@($title, $body, $btnV1, $btnV2))
-    $form.AcceptButton = $btnV1
+    $form.Controls.AddRange(@($title, $body, $btnV2, $btnV1))
+    $form.AcceptButton = $btnV2
     $form.Add_Shown({ $timer.Start() })
 
     $result = $form.ShowDialog()
     $timer.Dispose()
     $form.Dispose()
 
-    if ($result -eq 'No') { return 'v2' }
-    return 'v1'
+    if ($result -eq 'No') { return 'v1' }
+    return 'v2'
 }
 
 $DeployVersion = Show-OSDCloudVersionChoice -TimeoutSeconds 15
@@ -103,7 +103,7 @@ if ($DeployVersion -eq 'v2') {
         exit
     }
 }
-Write-Host -ForegroundColor Cyan "Keuze: v1 (productie)."
+Write-Host -ForegroundColor Cyan "Keuze: v1 (vorige versie)."
 function Show-OSDCloudGUI_Dashboard {
 
     Add-Type -AssemblyName System.Windows.Forms
